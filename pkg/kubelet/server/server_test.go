@@ -166,10 +166,10 @@ func (fk *fakeKubelet) StreamingConnectionIdleTimeout() time.Duration {
 }
 
 // Unused functions
-func (_ *fakeKubelet) GetNode() (*v1.Node, error)   { return nil, nil }
-func (_ *fakeKubelet) GetNodeConfig() cm.NodeConfig { return cm.NodeConfig{} }
-func (_ *fakeKubelet) GetPodCgroupRoot() string     { return "" }
-
+func (_ *fakeKubelet) GetNode() (*v1.Node, error)                       { return nil, nil }
+func (_ *fakeKubelet) GetNodeConfig() cm.NodeConfig                     { return cm.NodeConfig{} }
+func (_ *fakeKubelet) GetPodCgroupRoot() string                         { return "" }
+func (_ *fakeKubelet) GetPodByCgroupfs(cgroupfs string) (*v1.Pod, bool) { return nil, false }
 func (fk *fakeKubelet) ListVolumesForPod(podUID types.UID) (map[string]volume.Volume, bool) {
 	return map[string]volume.Volume{}, true
 }
@@ -940,33 +940,6 @@ func TestContainerLogs(t *testing.T) {
 	result := string(body)
 	if result != output {
 		t.Errorf("Expected: '%v', got: '%v'", output, result)
-	}
-}
-
-func TestContainerLogsWithLimitBytes(t *testing.T) {
-	fw := newServerTest()
-	defer fw.testHTTPServer.Close()
-	output := "foo bar"
-	podNamespace := "other"
-	podName := "foo"
-	expectedPodName := getPodName(podName, podNamespace)
-	expectedContainerName := "baz"
-	bytes := int64(3)
-	setPodByNameFunc(fw, podNamespace, podName, expectedContainerName)
-	setGetContainerLogsFunc(fw, t, expectedPodName, expectedContainerName, &v1.PodLogOptions{LimitBytes: &bytes}, output)
-	resp, err := http.Get(fw.testHTTPServer.URL + "/containerLogs/" + podNamespace + "/" + podName + "/" + expectedContainerName + "?limitBytes=3")
-	if err != nil {
-		t.Errorf("Got error GETing: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Errorf("Error reading container logs: %v", err)
-	}
-	result := string(body)
-	if result != output[:bytes] {
-		t.Errorf("Expected: '%v', got: '%v'", output[:bytes], result)
 	}
 }
 

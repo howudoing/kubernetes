@@ -22,7 +22,6 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -38,6 +37,7 @@ import (
 // ServiceAccountTokenGetter defines functions to retrieve a named service account and secret
 type ServiceAccountTokenGetter interface {
 	GetServiceAccount(namespace, name string) (*v1.ServiceAccount, error)
+	GetPod(namespace, name string) (*v1.Pod, error)
 	GetSecret(namespace, name string) (*v1.Secret, error)
 }
 
@@ -138,8 +138,6 @@ type Validator interface {
 	// Validator requires to validate the JWT.
 	NewPrivateClaims() interface{}
 }
-
-var errMismatchedSigningMethod = errors.New("invalid signing method")
 
 func (j *jwtTokenAuthenticator) AuthenticateToken(tokenData string) (user.Info, bool, error) {
 	if !j.hasCorrectIssuer(tokenData) {

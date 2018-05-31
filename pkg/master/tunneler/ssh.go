@@ -43,7 +43,7 @@ type AddressFunc func() (addresses []string, err error)
 type Tunneler interface {
 	Run(AddressFunc)
 	Stop()
-	Dial(net, addr string) (net.Conn, error)
+	Dial(ctx context.Context, net, addr string) (net.Conn, error)
 	SecondsSinceSync() int64
 	SecondsSinceSSHKeySync() int64
 }
@@ -60,7 +60,12 @@ func TunnelSyncHealthChecker(tunneler Tunneler) func(req *http.Request) error {
 			return fmt.Errorf("Tunnel sync is taking too long: %d", lag)
 		}
 		sshKeyLag := tunneler.SecondsSinceSSHKeySync()
-		if sshKeyLag > 600 {
+		// Since we are syncing ssh-keys every 5 minutes, the allowed
+		// lag since last sync should be more than 2x higher than that
+		// to allow for single failure, which can always happen.
+		// For now set it to 3x, which is 15 minutes.
+		// For more details see: http://pr.k8s.io/59347
+		if sshKeyLag > 900 {
 			return fmt.Errorf("SSHKey sync is taking too long: %d", sshKeyLag)
 		}
 		return nil
@@ -144,8 +149,8 @@ func (c *SSHTunneler) Stop() {
 	}
 }
 
-func (c *SSHTunneler) Dial(net, addr string) (net.Conn, error) {
-	return c.tunnels.Dial(net, addr)
+func (c *SSHTunneler) Dial(ctx context.Context, net, addr string) (net.Conn, error) {
+	return c.tunnels.Dial(ctx, net, addr)
 }
 
 func (c *SSHTunneler) SecondsSinceSync() int64 {

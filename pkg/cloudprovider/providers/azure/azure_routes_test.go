@@ -24,7 +24,7 @@ import (
 
 	"k8s.io/kubernetes/pkg/cloudprovider"
 
-	"github.com/Azure/azure-sdk-for-go/arm/network"
+	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2017-09-01/network"
 	"github.com/Azure/go-autorest/autorest/to"
 )
 
@@ -94,10 +94,8 @@ func TestCreateRoute(t *testing.T) {
 	route := cloudprovider.Route{TargetNode: "node", DestinationCIDR: "1.2.3.4/24"}
 
 	nodeIP := "2.4.6.8"
-	fakeVM.NodeToIP = map[string]map[string]string{
-		"": {
-			"node": nodeIP,
-		},
+	fakeVM.NodeToIP = map[string]string{
+		"node": nodeIP,
 	}
 
 	err := cloud.CreateRoute(context.TODO(), "cluster", "unused", &route)
@@ -122,7 +120,7 @@ func TestCreateRoute(t *testing.T) {
 		t.Errorf("Expected next hop: %v, saw %v", network.RouteNextHopTypeVirtualAppliance, routeInfo.NextHopType)
 	}
 	if *routeInfo.NextHopIPAddress != nodeIP {
-		t.Errorf("Expected IP addres: %s, saw %s", nodeIP, *routeInfo.NextHopIPAddress)
+		t.Errorf("Expected IP address: %s, saw %s", nodeIP, *routeInfo.NextHopIPAddress)
 	}
 }
 

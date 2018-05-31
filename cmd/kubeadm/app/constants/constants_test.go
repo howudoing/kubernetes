@@ -18,9 +18,10 @@ package constants
 
 import (
 	"fmt"
-	"k8s.io/kubernetes/pkg/util/version"
 	"strings"
 	"testing"
+
+	"k8s.io/kubernetes/pkg/util/version"
 )
 
 func TestGetStaticPodDirectory(t *testing.T) {
@@ -123,26 +124,26 @@ func TestEtcdSupportedVersion(t *testing.T) {
 		{
 			kubernetesVersion: "1.99.0",
 			expectedVersion:   nil,
-			expectedError:     fmt.Errorf("Unsupported or unknown kubernetes version"),
-		},
-		{
-			kubernetesVersion: "1.9.0",
-			expectedVersion:   version.MustParseSemantic("3.1.11"),
-			expectedError:     nil,
-		},
-		{
-			kubernetesVersion: "1.9.2",
-			expectedVersion:   version.MustParseSemantic("3.1.11"),
-			expectedError:     nil,
+			expectedError:     fmt.Errorf("Unsupported or unknown kubernetes version(1.99.0)"),
 		},
 		{
 			kubernetesVersion: "1.10.0",
-			expectedVersion:   version.MustParseSemantic("3.2.14"),
+			expectedVersion:   version.MustParseSemantic("3.1.12"),
 			expectedError:     nil,
 		},
 		{
-			kubernetesVersion: "1.10.1",
-			expectedVersion:   version.MustParseSemantic("3.2.14"),
+			kubernetesVersion: "1.10.2",
+			expectedVersion:   version.MustParseSemantic("3.1.12"),
+			expectedError:     nil,
+		},
+		{
+			kubernetesVersion: "1.11.0",
+			expectedVersion:   version.MustParseSemantic("3.2.18"),
+			expectedError:     nil,
+		},
+		{
+			kubernetesVersion: "1.12.1",
+			expectedVersion:   version.MustParseSemantic("3.2.18"),
 			expectedError:     nil,
 		},
 	}

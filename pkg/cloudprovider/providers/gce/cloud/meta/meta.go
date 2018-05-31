@@ -103,7 +103,19 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.BackendServicesService{}),
 		additionalMethods: []string{
 			"GetHealth",
+			"Patch",
 			"Update",
+		},
+	},
+	{
+		Object:      "BackendService",
+		Service:     "BackendServices",
+		Resource:    "backendServices",
+		version:     VersionBeta,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&beta.BackendServicesService{}),
+		additionalMethods: []string{
+			"SetSecurityPolicy",
 		},
 	},
 	{
@@ -325,6 +337,21 @@ var AllServices = []*ServiceInfo{
 		Resource:    "routes",
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&ga.RoutesService{}),
+	},
+	{
+		Object:      "SecurityPolicy",
+		Service:     "SecurityPolicies",
+		Resource:    "securityPolicies",
+		version:     VersionBeta,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&beta.SecurityPoliciesService{}),
+		additionalMethods: []string{
+			"AddRule",
+			"GetRule",
+			"Patch",
+			"PatchRule",
+			"RemoveRule",
+		},
 	},
 	{
 		Object:      "SslCertificate",

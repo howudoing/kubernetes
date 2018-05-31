@@ -113,9 +113,7 @@ func addComputeResource(s *types.ComputeResourceSummary, h *HostSystem) {
 // CreateDefaultESX creates a standalone ESX
 // Adds objects of type: Datacenter, Network, ComputeResource, ResourcePool and HostSystem
 func CreateDefaultESX(f *Folder) {
-	dc := &esx.Datacenter
-	f.putChild(dc)
-	createDatacenterFolders(dc, false)
+	dc := NewDatacenter(f)
 
 	host := NewHostSystem(esx.HostSystem)
 
@@ -173,6 +171,25 @@ func CreateStandaloneHost(f *Folder, spec types.HostConnectSpec) (*HostSystem, t
 	pool.Owner = cr.Self
 
 	return host, nil
+}
+
+func (h *HostSystem) DestroyTask(req *types.Destroy_Task) soap.HasFault {
+	task := CreateTask(h, "destroy", func(t *Task) (types.AnyType, types.BaseMethodFault) {
+		if len(h.Vm) > 0 {
+			return nil, &types.ResourceInUse{}
+		}
+
+		f := Map.getEntityParent(h, "Folder").(*Folder)
+		f.removeChild(h.Reference())
+
+		return nil, nil
+	})
+
+	return &methods.Destroy_TaskBody{
+		Res: &types.Destroy_TaskResponse{
+			Returnval: task.Run(),
+		},
+	}
 }
 
 func (h *HostSystem) EnterMaintenanceModeTask(spec *types.EnterMaintenanceMode_Task) soap.HasFault {

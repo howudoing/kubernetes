@@ -34,6 +34,7 @@ import (
 	statsapi "k8s.io/kubernetes/pkg/kubelet/apis/stats/v1alpha1"
 	"k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/events"
+	"k8s.io/kubernetes/pkg/kubelet/util/sliceutils"
 )
 
 // StatsProvider is an interface for fetching stats used during image garbage
@@ -120,10 +121,14 @@ func (i *imageCache) set(images []container.Image) {
 	i.images = images
 }
 
-// get gets image list from image cache.
+// get gets a sorted (by image size) image list from image cache.
+// There is a potentical data race in this function. See PR #60448
+// Because there is deepcopy function available currently, move sort
+// function inside this function
 func (i *imageCache) get() []container.Image {
-	i.RLock()
-	defer i.RUnlock()
+	i.Lock()
+	defer i.Unlock()
+	sort.Sort(sliceutils.ByImageSize(i.images))
 	return i.images
 }
 
@@ -351,7 +356,7 @@ func (im *realImageGCManager) freeSpace(bytesToFree int64, freeTime time.Time) (
 		// Images that are currently in used were given a newer lastUsed.
 		if image.lastUsed.Equal(freeTime) || image.lastUsed.After(freeTime) {
 			glog.V(5).Infof("Image ID %s has lastUsed=%v which is >= freeTime=%v, not eligible for garbage collection", image.id, image.lastUsed, freeTime)
-			break
+			continue
 		}
 
 		// Avoid garbage collect the image if the image is not old enough.

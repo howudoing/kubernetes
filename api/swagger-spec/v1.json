@@ -16452,6 +16452,38 @@
         "allowMultiple": false
        },
        {
+        "type": "v1.DeleteOptions",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "gracePeriodSeconds",
+        "description": "The duration in seconds before the object should be deleted. Value must be non-negative integer. The value zero indicates delete immediately. If this value is nil, the default grace period for the specified type will be used. Defaults to a per object value if not specified. zero means delete immediately.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "orphanDependents",
+        "description": "Deprecated: please use the PropagationPolicy, this field will be deprecated in 1.7. Should the dependent objects be orphaned. If true/false, the \"orphan\" finalizer will be added to/removed from the object's finalizers list. Either this field or PropagationPolicy may be set, but not both.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "propagationPolicy",
+        "description": "Whether and how garbage collection will be performed. Either this field or OrphanDependents may be set, but not both. The default policy is decided by the existing finalizer set in the metadata.finalizers and the resource-specific default policy. Acceptable values are: 'Orphan' - orphan the dependents; 'Background' - allow the garbage collector to delete the dependents in the background; 'Foreground' - a cascading policy that deletes all dependents in the foreground.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
         "type": "string",
         "paramType": "path",
         "name": "namespace",
@@ -18154,9 +18186,6 @@
    "v1.Endpoints": {
     "id": "v1.Endpoints",
     "description": "Endpoints is a collection of endpoints that implement the actual service. Example:\n  Name: \"mysvc\",\n  Subsets: [\n    {\n      Addresses: [{\"ip\": \"10.10.1.1\"}, {\"ip\": \"10.10.2.2\"}],\n      Ports: [{\"name\": \"a\", \"port\": 8675}, {\"name\": \"b\", \"port\": 309}]\n    },\n    {\n      Addresses: [{\"ip\": \"10.10.3.3\"}],\n      Ports: [{\"name\": \"a\", \"port\": 93}, {\"name\": \"b\", \"port\": 76}]\n    },\n ]",
-    "required": [
-     "subsets"
-    ],
     "properties": {
      "kind": {
       "type": "string",
@@ -18634,10 +18663,6 @@
       "type": "string",
       "description": "PodCIDR represents the pod IP range assigned to the node."
      },
-     "externalID": {
-      "type": "string",
-      "description": "External ID of the node assigned by some machine database (e.g. a cloud provider). Deprecated."
-     },
      "providerID": {
       "type": "string",
       "description": "ID of the node assigned by the cloud provider in the format: \u003cProviderName\u003e://\u003cProviderSpecificNodeID\u003e"
@@ -18656,6 +18681,10 @@
      "configSource": {
       "$ref": "v1.NodeConfigSource",
       "description": "If specified, the source to get node configuration from The DynamicKubeletConfig feature gate must be enabled for the Kubelet to use this field"
+     },
+     "externalID": {
+      "type": "string",
+      "description": "Deprecated. Not all kubelets will set this field. Remove field after 1.13. see: https://issues.k8s.io/61966"
      }
     }
    },
@@ -18689,16 +18718,40 @@
     "id": "v1.NodeConfigSource",
     "description": "NodeConfigSource specifies a source of node configuration. Exactly one subfield (excluding metadata) must be non-nil.",
     "properties": {
-     "kind": {
+     "configMap": {
+      "$ref": "v1.ConfigMapNodeConfigSource",
+      "description": "ConfigMap is a reference to a Node's ConfigMap"
+     }
+    }
+   },
+   "v1.ConfigMapNodeConfigSource": {
+    "id": "v1.ConfigMapNodeConfigSource",
+    "description": "ConfigMapNodeConfigSource contains the information to reference a ConfigMap as a config source for the Node.",
+    "required": [
+     "namespace",
+     "name",
+     "kubeletConfigKey"
+    ],
+    "properties": {
+     "namespace": {
       "type": "string",
-      "description": "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds"
+      "description": "Namespace is the metadata.namespace of the referenced ConfigMap. This field is required in all cases."
      },
-     "apiVersion": {
+     "name": {
       "type": "string",
-      "description": "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources"
+      "description": "Name is the metadata.name of the referenced ConfigMap. This field is required in all cases."
      },
-     "configMapRef": {
-      "$ref": "v1.ObjectReference"
+     "uid": {
+      "type": "string",
+      "description": "UID is the metadata.UID of the referenced ConfigMap. This field is forbidden in Node.Spec, and required in Node.Status."
+     },
+     "resourceVersion": {
+      "type": "string",
+      "description": "ResourceVersion is the metadata.ResourceVersion of the referenced ConfigMap. This field is forbidden in Node.Spec, and required in Node.Status."
+     },
+     "kubeletConfigKey": {
+      "type": "string",
+      "description": "KubeletConfigKey declares which key of the referenced ConfigMap corresponds to the KubeletConfiguration structure This field is required in all cases."
      }
     }
    },
@@ -18760,6 +18813,10 @@
        "$ref": "v1.AttachedVolume"
       },
       "description": "List of volumes that are attached to the node."
+     },
+     "config": {
+      "$ref": "v1.NodeConfigStatus",
+      "description": "Status of the config assigned to the node via the dynamic Kubelet config feature."
      }
     }
    },
@@ -18937,6 +18994,28 @@
      "devicePath": {
       "type": "string",
       "description": "DevicePath represents the device path where the volume should be available"
+     }
+    }
+   },
+   "v1.NodeConfigStatus": {
+    "id": "v1.NodeConfigStatus",
+    "description": "NodeConfigStatus describes the status of the config assigned by Node.Spec.ConfigSource.",
+    "properties": {
+     "assigned": {
+      "$ref": "v1.NodeConfigSource",
+      "description": "Assigned reports the checkpointed config the node will try to use. When Node.Spec.ConfigSource is updated, the node checkpoints the associated config payload to local disk, along with a record indicating intended config. The node refers to this record to choose its config checkpoint, and reports this record in Assigned. Assigned only updates in the status after the record has been checkpointed to disk. When the Kubelet is restarted, it tries to make the Assigned config the Active config by loading and validating the checkpointed payload identified by Assigned."
+     },
+     "active": {
+      "$ref": "v1.NodeConfigSource",
+      "description": "Active reports the checkpointed config the node is actively using. Active will represent either the current version of the Assigned config, or the current LastKnownGood config, depending on whether attempting to use the Assigned config results in an error."
+     },
+     "lastKnownGood": {
+      "$ref": "v1.NodeConfigSource",
+      "description": "LastKnownGood reports the checkpointed config the node will fall back to when it encounters an error attempting to use the Assigned config. The Assigned config becomes the LastKnownGood config when the node determines that the Assigned config is stable and correct. This is currently implemented as a 10-minute soak period starting when the local record of Assigned config is updated. If the Assigned config is Active at the end of this period, it becomes the LastKnownGood. Note that if Spec.ConfigSource is reset to nil (use local defaults), the LastKnownGood is also immediately reset to nil, because the local default config is always assumed good. You should not make assumptions about the node's method of determining config stability and correctness, as this may change or become configurable in the future."
+     },
+     "error": {
+      "type": "string",
+      "description": "Error describes any problems reconciling the Spec.ConfigSource to the Active config. Errors may occur, for example, attempting to checkpoint Spec.ConfigSource to the local Assigned record, attempting to checkpoint the payload associated with Spec.ConfigSource, attempting to load or validate the Assigned config, etc. Errors may occur at different points while syncing config. Earlier errors (e.g. download or checkpointing errors) will not result in a rollback to LastKnownGood, and may resolve across Kubelet retries. Later errors (e.g. loading or validating a checkpointed config) will result in a rollback to LastKnownGood. In the latter case, it is usually possible to resolve the error by fixing the config assigned in Spec.ConfigSource. You can find additional information for debugging by searching the error message in the Kubelet log. Error is a human-readable description of the error state; machines can check whether or not Error is empty, but should not rely on the stability of the Error text across Kubelet versions."
      }
     }
    },
@@ -19314,7 +19393,7 @@
      },
      "persistentVolumeReclaimPolicy": {
       "type": "string",
-      "description": "What happens to a persistent volume when released from its claim. Valid options are Retain (default) and Recycle. Recycling must be supported by the volume plugin underlying this persistent volume. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#reclaiming"
+      "description": "What happens to a persistent volume when released from its claim. Valid options are Retain (default for manually created PersistentVolumes), Delete (default for dynamically provisioned PersistentVolumes), and Recycle (deprecated). Recycle must be supported by the volume plugin underlying this PersistentVolume. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#reclaiming"
      },
      "storageClassName": {
       "type": "string",
@@ -19920,14 +19999,14 @@
    },
    "v1.LocalVolumeSource": {
     "id": "v1.LocalVolumeSource",
-    "description": "Local represents directly-attached storage with node affinity",
+    "description": "Local represents directly-attached storage with node affinity (Beta feature)",
     "required": [
      "path"
     ],
     "properties": {
      "path": {
       "type": "string",
-      "description": "The full path to the volume on the node For alpha, this path must be a directory Once block as a source is supported, then this path can point to a block device"
+      "description": "The full path to the volume on the node. It can be either a directory or block device (disk, partition, ...). Directories can be represented only by PersistentVolume with VolumeMode=Filesystem. Block devices can be represented only by VolumeMode=Block, which also requires the BlockVolume alpha feature gate to be enabled."
      }
     }
    },
@@ -19980,6 +20059,22 @@
      "fsType": {
       "type": "string",
       "description": "Filesystem type to mount. Must be a filesystem type supported by the host operating system. Ex. \"ext4\", \"xfs\", \"ntfs\". Implicitly inferred to be \"ext4\" if unspecified."
+     },
+     "volumeAttributes": {
+      "type": "object",
+      "description": "Attributes of the volume to publish."
+     },
+     "controllerPublishSecretRef": {
+      "$ref": "v1.SecretReference",
+      "description": "ControllerPublishSecretRef is a reference to the secret object containing sensitive information to pass to the CSI driver to complete the CSI ControllerPublishVolume and ControllerUnpublishVolume calls. This field is optional, and  may be empty if no secret is required. If the secret object contains more than one secret, all secrets are passed."
+     },
+     "nodeStageSecretRef": {
+      "$ref": "v1.SecretReference",
+      "description": "NodeStageSecretRef is a reference to the secret object containing sensitive information to pass to the CSI driver to complete the CSI NodeStageVolume and NodeStageVolume and NodeUnstageVolume calls. This field is optional, and  may be empty if no secret is required. If the secret object contains more than one secret, all secrets are passed."
+     },
+     "nodePublishSecretRef": {
+      "$ref": "v1.SecretReference",
+      "description": "NodePublishSecretRef is a reference to the secret object containing sensitive information to pass to the CSI driver to complete the CSI NodePublishVolume and NodeUnpublishVolume calls. This field is optional, and  may be empty if no secret is required. If the secret object contains more than one secret, all secrets are passed."
      }
     }
    },
@@ -20011,17 +20106,21 @@
    },
    "v1.NodeSelectorTerm": {
     "id": "v1.NodeSelectorTerm",
-    "description": "A null or empty node selector term matches no objects.",
-    "required": [
-     "matchExpressions"
-    ],
+    "description": "A null or empty node selector term matches no objects. The requirements of them are ANDed.",
     "properties": {
      "matchExpressions": {
       "type": "array",
       "items": {
        "$ref": "v1.NodeSelectorRequirement"
       },
-      "description": "Required. A list of node selector requirements. The requirements are ANDed."
+      "description": "A list of node selector requirements by node's labels."
+     },
+     "matchFields": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.NodeSelectorRequirement"
+      },
+      "description": "A list of node selector requirements by node's fields."
      }
     }
    },
@@ -20166,7 +20265,7 @@
      },
      "dnsPolicy": {
       "type": "string",
-      "description": "Set DNS policy for the pod. Defaults to \"ClusterFirst\". Valid values are 'ClusterFirstWithHostNet', 'ClusterFirst', 'Default' or 'None'. DNS parameters given in DNSConfig will be merged with the policy selected with DNSPolicy. To have DNS options set along with hostNetwork, you have to specify DNS policy explicitly to 'ClusterFirstWithHostNet'. Note that 'None' policy is an alpha feature introduced in v1.9 and CustomPodDNS feature gate must be enabled to use it."
+      "description": "Set DNS policy for the pod. Defaults to \"ClusterFirst\". Valid values are 'ClusterFirstWithHostNet', 'ClusterFirst', 'Default' or 'None'. DNS parameters given in DNSConfig will be merged with the policy selected with DNSPolicy. To have DNS options set along with hostNetwork, you have to specify DNS policy explicitly to 'ClusterFirstWithHostNet'."
      },
      "nodeSelector": {
       "type": "object",
@@ -20256,7 +20355,7 @@
      },
      "dnsConfig": {
       "$ref": "v1.PodDNSConfig",
-      "description": "Specifies the DNS parameters of a pod. Parameters specified here will be merged to the generated DNS configuration based on DNSPolicy. This is an alpha feature introduced in v1.9 and CustomPodDNS feature gate must be enabled to use it."
+      "description": "Specifies the DNS parameters of a pod. Parameters specified here will be merged to the generated DNS configuration based on DNSPolicy."
      }
     }
    },
@@ -21264,7 +21363,7 @@
      },
      "mountPropagation": {
       "$ref": "v1.MountPropagationMode",
-      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is alpha in 1.8 and can be reworked or removed in a future release."
+      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is beta in 1.10."
      }
     }
    },
@@ -21466,6 +21565,11 @@
       "format": "int64",
       "description": "The UID to run the entrypoint of the container process. Defaults to user specified in image metadata if unspecified. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
      },
+     "runAsGroup": {
+      "type": "integer",
+      "format": "int64",
+      "description": "The GID to run the entrypoint of the container process. Uses runtime default if unset. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
+     },
      "runAsNonRoot": {
       "type": "boolean",
       "description": "Indicates that the container must run as a non-root user. If true, the Kubelet will validate the image at runtime to ensure that it does not run as UID 0 (root) and fail to start the container if it does. If unset or false, no such validation will be performed. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
@@ -21538,6 +21642,11 @@
       "type": "integer",
       "format": "int64",
       "description": "The UID to run the entrypoint of the container process. Defaults to user specified in image metadata if unspecified. May also be set in SecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence for that container."
+     },
+     "runAsGroup": {
+      "type": "integer",
+      "format": "int64",
+      "description": "The GID to run the entrypoint of the container process. Uses runtime default if unset. May also be set in SecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence for that container."
      },
      "runAsNonRoot": {
       "type": "boolean",
@@ -22613,7 +22722,7 @@
      },
      "publishNotReadyAddresses": {
       "type": "boolean",
-      "description": "publishNotReadyAddresses, when set to true, indicates that DNS implementations must publish the notReadyAddresses of subsets for the Endpoints associated with the Service. The default value is false. The primary use case for setting this field is to use a StatefulSet's Headless Service to propagate SRV records for its Pods without respect to their readiness for purpose of peer discovery. This field will replace the service.alpha.kubernetes.io/tolerate-unready-endpoints when that annotation is deprecated and all clients have been converted to use this field."
+      "description": "publishNotReadyAddresses, when set to true, indicates that DNS implementations must publish the notReadyAddresses of subsets for the Endpoints associated with the Service. The default value is false. The primary use case for setting this field is to use a StatefulSet's Headless Service to propagate SRV records for its Pods without respect to their readiness for purpose of peer discovery."
      },
      "sessionAffinityConfig": {
       "$ref": "v1.SessionAffinityConfig",

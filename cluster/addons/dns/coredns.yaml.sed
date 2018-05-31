@@ -58,14 +58,15 @@ data:
     .:53 {
         errors
         health
-        kubernetes $DNS_DOMAIN $SERVICE_CLUSTER_IP_RANGE {
+        kubernetes $DNS_DOMAIN in-addr.arpa ip6.arpa {
             pods insecure
-            upstream /etc/resolv.conf
+            upstream
             fallthrough in-addr.arpa ip6.arpa
         }
         prometheus :9153
         proxy . /etc/resolv.conf
         cache 30
+        reload
     }
 ---
 apiVersion: extensions/v1beta1
@@ -74,23 +75,28 @@ metadata:
   name: coredns
   namespace: kube-system
   labels:
-    k8s-app: coredns
+    k8s-app: kube-dns
     kubernetes.io/cluster-service: "true"
     addonmanager.kubernetes.io/mode: Reconcile
     kubernetes.io/name: "CoreDNS"
 spec:
-  replicas: 2
+  # replicas: not specified here:
+  # 1. In order to make Addon Manager do not reconcile this replicas parameter.
+  # 2. Default is 1.
+  # 3. Will be tuned in real time if DNS horizontal auto-scaling is turned on.
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 1
   selector:
     matchLabels:
-      k8s-app: coredns
+      k8s-app: kube-dns
   template:
     metadata:
       labels:
-        k8s-app: coredns
+        k8s-app: kube-dns
+      annotations:
+        seccomp.security.alpha.kubernetes.io/pod: 'docker/default'
     spec:
       serviceAccountName: coredns
       tolerations:
@@ -98,21 +104,9 @@ spec:
           effect: NoSchedule
         - key: "CriticalAddonsOnly"
           operator: "Exists"
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: k8s-app
-                  operator: In
-                  values:
-                  - coredns
-                topologyKey: kubernetes.io/hostname
       containers:
       - name: coredns
-        image: coredns/coredns:1.0.4
+        image: coredns/coredns:1.1.3
         imagePullPolicy: IfNotPresent
         resources:
           limits:
@@ -130,6 +124,9 @@ spec:
           protocol: UDP
         - containerPort: 53
           name: dns-tcp
+          protocol: TCP
+        - containerPort: 9153
+          name: metrics
           protocol: TCP
         livenessProbe:
           httpGet:
@@ -152,16 +149,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: coredns
+  name: kube-dns
   namespace: kube-system
+  annotations:
+    prometheus.io/scrape: "true"
   labels:
-    k8s-app: coredns
+    k8s-app: kube-dns
     kubernetes.io/cluster-service: "true"
     addonmanager.kubernetes.io/mode: Reconcile
     kubernetes.io/name: "CoreDNS"
 spec:
   selector:
-    k8s-app: coredns
+    k8s-app: kube-dns
   clusterIP: $DNS_SERVER_IP
   ports:
   - name: dns

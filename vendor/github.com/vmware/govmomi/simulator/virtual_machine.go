@@ -17,11 +17,13 @@ limitations under the License.
 package simulator
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -63,7 +65,7 @@ func NewVirtualMachine(parent types.ManagedObjectReference, spec *types.VirtualM
 		MemoryAllocation: &rspec.MemoryAllocation,
 		CpuAllocation:    &rspec.CpuAllocation,
 	}
-	vm.Snapshot = &types.VirtualMachineSnapshotInfo{}
+	vm.Snapshot = nil // intentionally set to nil until a snapshot is created
 	vm.Storage = &types.VirtualMachineStorageInfo{
 		Timestamp: time.Now(),
 	}
@@ -420,6 +422,28 @@ func (vm *VirtualMachine) generateMAC() string {
 	return mac.String()
 }
 
+func numberToString(n int64, sep rune) string {
+	buf := &bytes.Buffer{}
+	if n < 0 {
+		n = -n
+		buf.WriteRune('-')
+	}
+	s := strconv.FormatInt(n, 10)
+	pos := 3 - (len(s) % 3)
+	for i := 0; i < len(s); i++ {
+		if pos == 3 {
+			if i != 0 {
+				buf.WriteRune(sep)
+			}
+			pos = 0
+		}
+		pos++
+		buf.WriteByte(s[i])
+	}
+
+	return buf.String()
+}
+
 func (vm *VirtualMachine) configureDevice(devices object.VirtualDeviceList, spec *types.VirtualDeviceConfigSpec) types.BaseMethodFault {
 	device := spec.Device
 	d := device.GetVirtualDevice()
@@ -469,6 +493,7 @@ func (vm *VirtualMachine) configureDevice(devices object.VirtualDeviceList, spec
 			c.MacAddress = vm.generateMAC()
 		}
 	case *types.VirtualDisk:
+		summary = fmt.Sprintf("%s KB", numberToString(x.CapacityInKB, ','))
 		switch b := d.Backing.(type) {
 		case types.BaseVirtualDeviceFileBackingInfo:
 			info := b.GetVirtualDeviceFileBackingInfo()
@@ -513,19 +538,54 @@ func (vm *VirtualMachine) configureDevice(devices object.VirtualDeviceList, spec
 	return nil
 }
 
-func removeDevice(devices object.VirtualDeviceList, device types.BaseVirtualDevice) object.VirtualDeviceList {
-	var result object.VirtualDeviceList
+func (vm *VirtualMachine) removeDevice(devices object.VirtualDeviceList, spec *types.VirtualDeviceConfigSpec) object.VirtualDeviceList {
+	key := spec.Device.GetVirtualDevice().Key
 
 	for i, d := range devices {
-		if d.GetVirtualDevice().Key == device.GetVirtualDevice().Key {
-			result = append(result, devices[i+1:]...)
-			break
+		if d.GetVirtualDevice().Key != key {
+			continue
 		}
 
-		result = append(result, d)
+		devices = append(devices[:i], devices[i+1:]...)
+
+		switch device := spec.Device.(type) {
+		case *types.VirtualDisk:
+			if spec.FileOperation == types.VirtualDeviceConfigSpecFileOperationDestroy {
+				var file string
+
+				switch b := device.Backing.(type) {
+				case types.BaseVirtualDeviceFileBackingInfo:
+					file = b.GetVirtualDeviceFileBackingInfo().FileName
+				}
+
+				if file != "" {
+					dc := Map.getEntityDatacenter(Map.Get(*vm.Parent).(mo.Entity))
+					dm := Map.VirtualDiskManager()
+
+					dm.DeleteVirtualDiskTask(&types.DeleteVirtualDisk_Task{
+						Name:       file,
+						Datacenter: &dc.Self,
+					})
+				}
+			}
+		case types.BaseVirtualEthernetCard:
+			var net types.ManagedObjectReference
+
+			switch b := device.GetVirtualEthernetCard().Backing.(type) {
+			case *types.VirtualEthernetCardNetworkBackingInfo:
+				net = *b.Network
+			case *types.VirtualEthernetCardDistributedVirtualPortBackingInfo:
+				net.Type = "DistributedVirtualPortgroup"
+				net.Value = b.Port.PortgroupKey
+			}
+
+			RemoveReference(&vm.Network, net)
+		}
+
+		break
 	}
 
-	return result
+	return devices
 }
 
 func (vm *VirtualMachine) genVmdkPath() (string, types.BaseMethodFault) {
@@ -559,9 +619,6 @@ func (vm *VirtualMachine) genVmdkPath() (string, types.BaseMethodFault) {
 }
 
 func (vm *VirtualMachine) configureDevices(spec *types.VirtualMachineConfigSpec) types.BaseMethodFault {
-	dc := Map.getEntityDatacenter(Map.Get(*vm.Parent).(mo.Entity))
-	dm := Map.VirtualDiskManager()
-
 	devices := object.VirtualDeviceList(vm.Config.Hardware.Device)
 
 	for i, change := range spec.DeviceChange {
@@ -577,7 +634,7 @@ func (vm *VirtualMachine) configureDevices(spec *types.VirtualMachineConfigSpec)
 				}
 
 				// In this case, the CreateVM() spec included one of the default devices
-				devices = removeDevice(devices, device)
+				devices = vm.removeDevice(devices, dspec)
 			}
 
 			err := vm.configureDevice(devices, dspec)
@@ -586,25 +643,23 @@ func (vm *VirtualMachine) configureDevices(spec *types.VirtualMachineConfigSpec)
 			}
 
 			devices = append(devices, dspec.Device)
-		case types.VirtualDeviceConfigSpecOperationRemove:
-			devices = removeDevice(devices, dspec.Device)
-
-			disk, ok := dspec.Device.(*types.VirtualDisk)
-			if ok && dspec.FileOperation == types.VirtualDeviceConfigSpecFileOperationDestroy {
-				var file string
-
-				switch b := disk.Backing.(type) {
-				case types.BaseVirtualDeviceFileBackingInfo:
-					file = b.GetVirtualDeviceFileBackingInfo().FileName
-				}
-
-				if file != "" {
-					dm.DeleteVirtualDiskTask(&types.DeleteVirtualDisk_Task{
-						Name:       file,
-						Datacenter: &dc.Self,
-					})
-				}
+		case types.VirtualDeviceConfigSpecOperationEdit:
+			rspec := *dspec
+			rspec.Device = devices.FindByKey(device.Key)
+			if rspec.Device == nil {
+				return invalid
 			}
+			devices = vm.removeDevice(devices, &rspec)
+			device.DeviceInfo = nil // regenerate summary + label
+
+			err := vm.configureDevice(devices, dspec)
+			if err != nil {
+				return err
+			}
+
+			devices = append(devices, dspec.Device)
+		case types.VirtualDeviceConfigSpecOperationRemove:
+			devices = vm.removeDevice(devices, dspec)
 		}
 	}
 
@@ -795,6 +850,30 @@ func (vm *VirtualMachine) CloneVMTask(ctx *Context, req *types.CloneVM_Task) soa
 			},
 		}
 
+		for _, device := range vm.Config.Hardware.Device {
+			var fop types.VirtualDeviceConfigSpecFileOperation
+
+			switch device.(type) {
+			case *types.VirtualDisk:
+				// TODO: consider VirtualMachineCloneSpec.DiskMoveType
+				fop = types.VirtualDeviceConfigSpecFileOperationCreate
+				device = &types.VirtualDisk{
+					VirtualDevice: types.VirtualDevice{
+						Backing: &types.VirtualDiskFlatVer2BackingInfo{
+							DiskMode: string(types.VirtualDiskModePersistent),
+							// Leave FileName empty so CreateVM will just create a new one under VmPathName
+						},
+					},
+				}
+			}
+
+			config.DeviceChange = append(config.DeviceChange, &types.VirtualDeviceConfigSpec{
+				Operation:     types.VirtualDeviceConfigSpecOperationAdd,
+				Device:        device,
+				FileOperation: fop,
+			})
+		}
+
 		res := folder.CreateVMTask(ctx, &types.CreateVM_Task{
 			This:   folder.Self,
 			Config: config,
@@ -809,6 +888,7 @@ func (vm *VirtualMachine) CloneVMTask(ctx *Context, req *types.CloneVM_Task) soa
 
 		ref := ctask.Info.Result.(types.ManagedObjectReference)
 		clone := Map.Get(ref).(*VirtualMachine)
+		clone.configureDevices(&types.VirtualMachineConfigSpec{DeviceChange: req.Spec.Location.DeviceChange})
 
 		ctx.postEvent(&types.VmClonedEvent{
 			VmCloneEvent: types.VmCloneEvent{VmEvent: clone.event()},
@@ -936,8 +1016,7 @@ func (vm *VirtualMachine) RemoveAllSnapshotsTask(req *types.RemoveAllSnapshots_T
 
 		refs := allSnapshotsInTree(vm.Snapshot.RootSnapshotList)
 
-		vm.Snapshot.CurrentSnapshot = nil
-		vm.Snapshot.RootSnapshotList = nil
+		vm.Snapshot = nil
 
 		for _, ref := range refs {
 			Map.Remove(ref)

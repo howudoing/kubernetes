@@ -64,8 +64,12 @@ type MasterConfiguration struct {
 	// Token is used for establishing bidirectional trust between nodes and masters.
 	// Used for joining nodes in the cluster.
 	Token string `json:"token"`
-	// TokenTTL is a ttl for Token. Defaults to 24h.
+	// TokenTTL defines the ttl for Token. Defaults to 24h.
 	TokenTTL *metav1.Duration `json:"tokenTTL,omitempty"`
+	// TokenUsages describes the ways in which this token can be used.
+	TokenUsages []string `json:"tokenUsages,omitempty"`
+	// Extra groups that this token will authenticate as when used for authentication
+	TokenGroups []string `json:"tokenGroups,omitempty"`
 
 	// CRISocket is used to retrieve container runtime info.
 	CRISocket string `json:"criSocket,omitempty"`
@@ -112,12 +116,27 @@ type MasterConfiguration struct {
 
 	// FeatureGates enabled by the user.
 	FeatureGates map[string]bool `json:"featureGates,omitempty"`
+
+	// The cluster name
+	ClusterName string `json:"clusterName,omitempty"`
 }
 
 // API struct contains elements of API server address.
 type API struct {
-	// AdvertiseAddress sets the address for the API server to advertise.
+	// AdvertiseAddress sets the IP address for the API server to advertise.
 	AdvertiseAddress string `json:"advertiseAddress"`
+	// ControlPlaneEndpoint sets a stable IP address or DNS name for the control plane; it
+	// can be a valid IP address or a RFC-1123 DNS subdomain, both with optional TCP port.
+	// In case the ControlPlaneEndpoint is not specified, the AdvertiseAddress + BindPort
+	// are used; in case the ControlPlaneEndpoint is specified but without a TCP port,
+	// the BindPort is used.
+	// Possible usages are:
+	// e.g. In an cluster with more than one control plane instances, this field should be
+	// assigned the address of the external load balancer in front of the
+	// control plane instances.
+	// e.g.  in environments with enforced node recycling, the ControlPlaneEndpoint
+	// could be used for assigning a stable DNS to the control plane.
+	ControlPlaneEndpoint string `json:"controlPlaneEndpoint"`
 	// BindPort sets the secure port for the API Server to bind to.
 	// Defaults to 6443.
 	BindPort int32 `json:"bindPort"`
@@ -168,6 +187,10 @@ type Etcd struct {
 	Image string `json:"image"`
 	// SelfHosted holds configuration for self-hosting etcd.
 	SelfHosted *SelfHostedEtcd `json:"selfHosted,omitempty"`
+	// ServerCertSANs sets extra Subject Alternative Names for the etcd server signing cert.
+	ServerCertSANs []string `json:"serverCertSANs,omitempty"`
+	// PeerCertSANs sets extra Subject Alternative Names for the etcd peer signing cert.
+	PeerCertSANs []string `json:"peerCertSANs,omitempty"`
 }
 
 // SelfHostedEtcd describes options required to configure self-hosted etcd.
@@ -204,6 +227,8 @@ type NodeConfiguration struct {
 	// will be fetched. Currently we only pay attention to one API server but
 	// hope to support >1 in the future.
 	DiscoveryTokenAPIServers []string `json:"discoveryTokenAPIServers,omitempty"`
+	// DiscoveryTimeout modifies the discovery timeout
+	DiscoveryTimeout *metav1.Duration `json:"discoveryTimeout,omitempty"`
 	// NodeName is the name of the node to join the cluster. Defaults
 	// to the name of the host.
 	NodeName string `json:"nodeName"`
@@ -214,6 +239,8 @@ type NodeConfiguration struct {
 	Token string `json:"token"`
 	// CRISocket is used to retrieve container runtime info.
 	CRISocket string `json:"criSocket,omitempty"`
+	// ClusterName is the name for the cluster in kubeconfig.
+	ClusterName string `json:"clusterName,omitempty"`
 
 	// DiscoveryTokenCACertHashes specifies a set of public key pins to verify
 	// when token-based discovery is used. The root CA found during discovery
@@ -249,6 +276,10 @@ type HostPathMount struct {
 	HostPath string `json:"hostPath"`
 	// MountPath is the path inside the pod where hostPath will be mounted.
 	MountPath string `json:"mountPath"`
+	// Writable controls write access to the volume
+	Writable bool `json:"writable,omitempty"`
+	// PathType is the type of the HostPath.
+	PathType v1.HostPathType `json:"pathType,omitempty"`
 }
 
 // KubeProxy contains elements describing the proxy configuration.

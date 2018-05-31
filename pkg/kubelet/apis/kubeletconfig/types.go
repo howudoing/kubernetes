@@ -17,6 +17,7 @@ limitations under the License.
 package kubeletconfig
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -44,9 +45,9 @@ const (
 type KubeletConfiguration struct {
 	metav1.TypeMeta
 
-	// podManifestPath is the path to the directory containing pod manifests to
-	// run, or the path to a single manifest file
-	PodManifestPath string
+	// staticPodPath is the path to the directory containing local (static) pods to
+	// run, or the path to a single static pod file.
+	StaticPodPath string
 	// syncFrequency is the max period between synchronizing running
 	// containers and config
 	SyncFrequency metav1.Duration
@@ -55,10 +56,10 @@ type KubeletConfiguration struct {
 	FileCheckFrequency metav1.Duration
 	// httpCheckFrequency is the duration between checking http for new data
 	HTTPCheckFrequency metav1.Duration
-	// manifestURL is the URL for accessing the container manifest
-	ManifestURL string
-	// manifestURLHeader is a map of slices with HTTP headers to use when accessing the manifestURL
-	ManifestURLHeader map[string][]string
+	// staticPodURL is the URL for accessing static pods to run
+	StaticPodURL string
+	// staticPodURLHeader is a map of slices with HTTP headers to use when accessing the podURL
+	StaticPodURLHeader map[string][]string
 	// address is the IP address for the Kubelet to serve on (set to 0.0.0.0
 	// for all interfaces)
 	Address string
@@ -81,6 +82,17 @@ type KubeletConfiguration struct {
 	// TLSMinVersion is the minimum TLS version supported.
 	// Values are from tls package constants (https://golang.org/pkg/crypto/tls/#pkg-constants).
 	TLSMinVersion string
+	// rotateCertificates enables client certificate rotation. The Kubelet will request a
+	// new certificate from the certificates.k8s.io API. This requires an approver to approve the
+	// certificate signing requests. The RotateKubeletClientCertificate feature
+	// must be enabled.
+	RotateCertificates bool
+	// serverTLSBootstrap enables server certificate bootstrap. Instead of self
+	// signing a serving certificate, the Kubelet will request a certificate from
+	// the certificates.k8s.io API. This requires an approver to approve the
+	// certificate signing requests. The RotateKubeletServerCertificate feature
+	// must be enabled.
+	ServerTLSBootstrap bool
 	// authentication specifies how requests to the Kubelet's server are authenticated
 	Authentication KubeletAuthentication
 	// authorization specifies how requests to the Kubelet's server are authorized
@@ -160,6 +172,9 @@ type KubeletConfiguration struct {
 	// CPU Manager reconciliation period.
 	// Requires the CPUManager feature gate to be enabled.
 	CPUManagerReconcilePeriod metav1.Duration
+	// Map of QoS resource reservation percentages (memory only for now).
+	// Requires the QOSReserved feature gate to be enabled.
+	QOSReserved map[string]string
 	// runtimeRequestTimeout is the timeout for all runtime requests except long running
 	// requests - pull, logs, exec and attach.
 	RuntimeRequestTimeout metav1.Duration
@@ -240,6 +255,10 @@ type KubeletConfiguration struct {
 	FeatureGates map[string]bool
 	// Tells the Kubelet to fail to start if swap is enabled on the node.
 	FailSwapOn bool
+	// A quantity defines the maximum size of the container log file before it is rotated. For example: "5Mi" or "256Ki".
+	ContainerLogMaxSize string
+	// Maximum number of container log files that can be present for a container.
+	ContainerLogMaxFiles int32
 
 	/* following flags are meant for Node Allocatable */
 
@@ -319,4 +338,16 @@ type KubeletAnonymousAuthentication struct {
 	// Requests that are not rejected by another authentication method are treated as anonymous requests.
 	// Anonymous requests have a username of system:anonymous, and a group name of system:unauthenticated.
 	Enabled bool
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// SerializedNodeConfigSource allows us to serialize NodeConfigSource
+// This type is used internally by the Kubelet for tracking checkpointed dynamic configs.
+// It exists in the kubeletconfig API group because it is classified as a versioned input to the Kubelet.
+type SerializedNodeConfigSource struct {
+	metav1.TypeMeta
+	// Source is the source that we are serializing
+	// +optional
+	Source v1.NodeConfigSource
 }

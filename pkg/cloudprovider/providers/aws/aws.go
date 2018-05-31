@@ -44,7 +44,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/golang/glog"
-	"github.com/prometheus/client_golang/prometheus"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
@@ -430,7 +429,7 @@ type Volumes interface {
 	// Attach the disk to the node with the specified NodeName
 	// nodeName can be empty to mean "the instance on which we are running"
 	// Returns the device (e.g. /dev/xvdf) where we attached the volume
-	AttachDisk(diskName KubernetesVolumeID, nodeName types.NodeName, readOnly bool) (string, error)
+	AttachDisk(diskName KubernetesVolumeID, nodeName types.NodeName) (string, error)
 	// Detach the disk from the node with the specified NodeName
 	// nodeName can be empty to mean "the instance on which we are running"
 	// Returns the device where the volume was attached
@@ -754,7 +753,7 @@ func (s *awsSdkEC2) DescribeInstances(request *ec2.DescribeInstancesInput) ([]*e
 	for {
 		response, err := s.ec2.DescribeInstances(request)
 		if err != nil {
-			recordAwsMetric("describe_instance", 0, err)
+			recordAWSMetric("describe_instance", 0, err)
 			return nil, fmt.Errorf("error listing AWS instances: %q", err)
 		}
 
@@ -769,7 +768,7 @@ func (s *awsSdkEC2) DescribeInstances(request *ec2.DescribeInstancesInput) ([]*e
 		request.NextToken = nextToken
 	}
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("describe_instance", timeTaken, nil)
+	recordAWSMetric("describe_instance", timeTaken, nil)
 	return results, nil
 }
 
@@ -787,7 +786,7 @@ func (s *awsSdkEC2) AttachVolume(request *ec2.AttachVolumeInput) (*ec2.VolumeAtt
 	requestTime := time.Now()
 	resp, err := s.ec2.AttachVolume(request)
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("attach_volume", timeTaken, err)
+	recordAWSMetric("attach_volume", timeTaken, err)
 	return resp, err
 }
 
@@ -795,7 +794,7 @@ func (s *awsSdkEC2) DetachVolume(request *ec2.DetachVolumeInput) (*ec2.VolumeAtt
 	requestTime := time.Now()
 	resp, err := s.ec2.DetachVolume(request)
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("detach_volume", timeTaken, err)
+	recordAWSMetric("detach_volume", timeTaken, err)
 	return resp, err
 }
 
@@ -808,8 +807,8 @@ func (s *awsSdkEC2) DescribeVolumes(request *ec2.DescribeVolumesInput) ([]*ec2.V
 		response, err := s.ec2.DescribeVolumes(request)
 
 		if err != nil {
-			recordAwsMetric("describe_volume", 0, err)
-			return nil, fmt.Errorf("error listing AWS volumes: %q", err)
+			recordAWSMetric("describe_volume", 0, err)
+			return nil, err
 		}
 
 		results = append(results, response.Volumes...)
@@ -821,7 +820,7 @@ func (s *awsSdkEC2) DescribeVolumes(request *ec2.DescribeVolumesInput) ([]*ec2.V
 		request.NextToken = nextToken
 	}
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("describe_volume", timeTaken, nil)
+	recordAWSMetric("describe_volume", timeTaken, nil)
 	return results, nil
 }
 
@@ -829,7 +828,7 @@ func (s *awsSdkEC2) CreateVolume(request *ec2.CreateVolumeInput) (*ec2.Volume, e
 	requestTime := time.Now()
 	resp, err := s.ec2.CreateVolume(request)
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("create_volume", timeTaken, err)
+	recordAWSMetric("create_volume", timeTaken, err)
 	return resp, err
 }
 
@@ -837,7 +836,7 @@ func (s *awsSdkEC2) DeleteVolume(request *ec2.DeleteVolumeInput) (*ec2.DeleteVol
 	requestTime := time.Now()
 	resp, err := s.ec2.DeleteVolume(request)
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("delete_volume", timeTaken, err)
+	recordAWSMetric("delete_volume", timeTaken, err)
 	return resp, err
 }
 
@@ -845,7 +844,7 @@ func (s *awsSdkEC2) ModifyVolume(request *ec2.ModifyVolumeInput) (*ec2.ModifyVol
 	requestTime := time.Now()
 	resp, err := s.ec2.ModifyVolume(request)
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("modify_volume", timeTaken, err)
+	recordAWSMetric("modify_volume", timeTaken, err)
 	return resp, err
 }
 
@@ -856,7 +855,7 @@ func (s *awsSdkEC2) DescribeVolumeModifications(request *ec2.DescribeVolumesModi
 	for {
 		resp, err := s.ec2.DescribeVolumesModifications(request)
 		if err != nil {
-			recordAwsMetric("describe_volume_modification", 0, err)
+			recordAWSMetric("describe_volume_modification", 0, err)
 			return nil, fmt.Errorf("error listing volume modifictions : %v", err)
 		}
 		results = append(results, resp.VolumesModifications...)
@@ -867,7 +866,7 @@ func (s *awsSdkEC2) DescribeVolumeModifications(request *ec2.DescribeVolumesModi
 		request.NextToken = nextToken
 	}
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("describe_volume_modification", timeTaken, nil)
+	recordAWSMetric("describe_volume_modification", timeTaken, nil)
 	return results, nil
 }
 
@@ -900,7 +899,7 @@ func (s *awsSdkEC2) CreateTags(request *ec2.CreateTagsInput) (*ec2.CreateTagsOut
 	requestTime := time.Now()
 	resp, err := s.ec2.CreateTags(request)
 	timeTaken := time.Since(requestTime).Seconds()
-	recordAwsMetric("create_tags", timeTaken, err)
+	recordAWSMetric("create_tags", timeTaken, err)
 	return resp, err
 }
 
@@ -1147,7 +1146,7 @@ func (c *Cloud) Initialize(clientBuilder controller.ControllerClientBuilder) {
 	c.kubeClient = clientBuilder.ClientOrDie("aws-cloud-provider")
 	c.eventBroadcaster = record.NewBroadcaster()
 	c.eventBroadcaster.StartLogging(glog.Infof)
-	c.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(c.kubeClient.CoreV1().RESTClient()).Events("")})
+	c.eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: c.kubeClient.CoreV1().Events("")})
 	c.eventRecorder = c.eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "aws-cloud-provider"})
 }
 
@@ -1318,24 +1317,6 @@ func (c *Cloud) NodeAddressesByProviderID(ctx context.Context, providerID string
 	return extractNodeAddresses(instance)
 }
 
-// ExternalID returns the cloud provider ID of the node with the specified nodeName (deprecated).
-func (c *Cloud) ExternalID(ctx context.Context, nodeName types.NodeName) (string, error) {
-	if c.selfAWSInstance.nodeName == nodeName {
-		// We assume that if this is run on the instance itself, the instance exists and is alive
-		return c.selfAWSInstance.awsID, nil
-	}
-	// We must verify that the instance still exists
-	// Note that if the instance does not exist or is no longer running, we must return ("", cloudprovider.InstanceNotFound)
-	instance, err := c.findInstanceByNodeName(nodeName)
-	if err != nil {
-		return "", err
-	}
-	if instance == nil {
-		return "", cloudprovider.InstanceNotFound
-	}
-	return aws.StringValue(instance.InstanceId), nil
-}
-
 // InstanceExistsByProviderID returns true if the instance with the given provider id still exists and is running.
 // If false is returned with no error, the instance will be immediately deleted by the cloud controller manager.
 func (c *Cloud) InstanceExistsByProviderID(ctx context.Context, providerID string) (bool, error) {
@@ -1368,6 +1349,11 @@ func (c *Cloud) InstanceExistsByProviderID(ctx context.Context, providerID strin
 	return true, nil
 }
 
+// InstanceShutdownByProviderID returns true if the instance is in safe state to detach volumes
+func (c *Cloud) InstanceShutdownByProviderID(ctx context.Context, providerID string) (bool, error) {
+	return false, cloudprovider.NotImplemented
+}
+
 // InstanceID returns the cloud provider ID of the node with the specified nodeName.
 func (c *Cloud) InstanceID(ctx context.Context, nodeName types.NodeName) (string, error) {
 	// In the future it is possible to also return an endpoint as:
@@ -1377,6 +1363,10 @@ func (c *Cloud) InstanceID(ctx context.Context, nodeName types.NodeName) (string
 	}
 	inst, err := c.getInstanceByNodeName(nodeName)
 	if err != nil {
+		if err == cloudprovider.InstanceNotFound {
+			// The Instances interface requires that we return InstanceNotFound (without wrapping)
+			return "", err
+		}
 		return "", fmt.Errorf("getInstanceByNodeName failed for %q with %q", nodeName, err)
 	}
 	return "/" + aws.StringValue(inst.Placement.AvailabilityZone) + "/" + aws.StringValue(inst.InstanceId), nil
@@ -1691,6 +1681,20 @@ func newAWSDisk(aws *Cloud, name KubernetesVolumeID) (*awsDisk, error) {
 	return disk, nil
 }
 
+// Helper function for describeVolume callers. Tries to retype given error to AWS error
+// and returns true in case the AWS error is "InvalidVolume.NotFound", false otherwise
+func isAWSErrorVolumeNotFound(err error) bool {
+	if err != nil {
+		if awsError, ok := err.(awserr.Error); ok {
+			// https://docs.aws.amazon.com/AWSEC2/latest/APIReference/errors-overview.html
+			if awsError.Code() == "InvalidVolume.NotFound" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Gets the full information about this volume from the EC2 API
 func (d *awsDisk) describeVolume() (*ec2.Volume, error) {
 	volumeID := d.awsID
@@ -1701,13 +1705,13 @@ func (d *awsDisk) describeVolume() (*ec2.Volume, error) {
 
 	volumes, err := d.ec2.DescribeVolumes(request)
 	if err != nil {
-		return nil, fmt.Errorf("error querying ec2 for volume %q: %q", volumeID, err)
+		return nil, err
 	}
 	if len(volumes) == 0 {
-		return nil, fmt.Errorf("no volumes found for volume %q", volumeID)
+		return nil, fmt.Errorf("no volumes found")
 	}
 	if len(volumes) > 1 {
-		return nil, fmt.Errorf("multiple volumes found for volume %q", volumeID)
+		return nil, fmt.Errorf("multiple volumes found")
 	}
 	return volumes[0], nil
 }
@@ -1811,12 +1815,29 @@ func (d *awsDisk) waitForAttachmentStatus(status string) (*ec2.VolumeAttachment,
 	err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		info, err := d.describeVolume()
 		if err != nil {
+			// The VolumeNotFound error is special -- we don't need to wait for it to repeat
+			if isAWSErrorVolumeNotFound(err) {
+				if status == "detached" {
+					// The disk doesn't exist, assume it's detached, log warning and stop waiting
+					glog.Warningf("Waiting for volume %q to be detached but the volume does not exist", d.awsID)
+					stateStr := "detached"
+					attachment = &ec2.VolumeAttachment{
+						State: &stateStr,
+					}
+					return true, nil
+				}
+				if status == "attached" {
+					// The disk doesn't exist, complain, give up waiting and report error
+					glog.Warningf("Waiting for volume %q to be attached but the volume does not exist", d.awsID)
+					return false, err
+				}
+			}
 			describeErrorCount++
 			if describeErrorCount > volumeAttachmentStatusConsecutiveErrorLimit {
 				// report the error
 				return false, err
 			} else {
-				glog.Warningf("Ignoring error from describe volume; will retry: %q", err)
+				glog.Warningf("Ignoring error from describe volume for volume %q; will retry: %q", d.awsID, err)
 				return false, nil
 			}
 		} else {
@@ -1860,10 +1881,10 @@ func (d *awsDisk) deleteVolume() (bool, error) {
 	request := &ec2.DeleteVolumeInput{VolumeId: d.awsID.awsString()}
 	_, err := d.ec2.DeleteVolume(request)
 	if err != nil {
+		if isAWSErrorVolumeNotFound(err) {
+			return false, nil
+		}
 		if awsError, ok := err.(awserr.Error); ok {
-			if awsError.Code() == "InvalidVolume.NotFound" {
-				return false, nil
-			}
 			if awsError.Code() == "VolumeInUse" {
 				return false, volume.NewDeletedVolumeInUseError(err.Error())
 			}
@@ -1939,7 +1960,7 @@ func wrapAttachError(err error, disk *awsDisk, instance string) error {
 }
 
 // AttachDisk implements Volumes.AttachDisk
-func (c *Cloud) AttachDisk(diskName KubernetesVolumeID, nodeName types.NodeName, readOnly bool) (string, error) {
+func (c *Cloud) AttachDisk(diskName KubernetesVolumeID, nodeName types.NodeName) (string, error) {
 	disk, err := newAWSDisk(c, diskName)
 	if err != nil {
 		return "", err
@@ -1948,12 +1969,6 @@ func (c *Cloud) AttachDisk(diskName KubernetesVolumeID, nodeName types.NodeName,
 	awsInstance, info, err := c.getFullInstance(nodeName)
 	if err != nil {
 		return "", fmt.Errorf("error finding instance %s: %q", nodeName, err)
-	}
-
-	if readOnly {
-		// TODO: We could enforce this when we mount the volume (?)
-		// TODO: We could also snapshot the volume and attach copies of it
-		return "", errors.New("AWS volumes cannot be mounted read-only")
 	}
 
 	// mountDevice will hold the device where we should try to attach the disk
@@ -2044,7 +2059,13 @@ func (c *Cloud) AttachDisk(diskName KubernetesVolumeID, nodeName types.NodeName,
 func (c *Cloud) DetachDisk(diskName KubernetesVolumeID, nodeName types.NodeName) (string, error) {
 	diskInfo, attached, err := c.checkIfAttachedToNode(diskName, nodeName)
 	if err != nil {
-		return "", err
+		if isAWSErrorVolumeNotFound(err) {
+			// Someone deleted the volume being detached; complain, but do nothing else and return success
+			glog.Warningf("DetachDisk %s called for node %s but volume does not exist; assuming the volume is detached", diskName, nodeName)
+			return "", nil
+		} else {
+			return "", err
+		}
 	}
 
 	if !attached && diskInfo.ec2Instance != nil {
@@ -2113,17 +2134,17 @@ func (c *Cloud) CreateDisk(volumeOptions *VolumeOptions) (KubernetesVolumeID, er
 
 	var createAZ string
 	if !volumeOptions.ZonePresent && !volumeOptions.ZonesPresent {
-		createAZ = volume.ChooseZoneForVolume(allZones, volumeOptions.PVCName)
+		createAZ = volumeutil.ChooseZoneForVolume(allZones, volumeOptions.PVCName)
 	}
 	if !volumeOptions.ZonePresent && volumeOptions.ZonesPresent {
 		if adminSetOfZones, err := volumeutil.ZonesToSet(volumeOptions.AvailabilityZones); err != nil {
 			return "", err
 		} else {
-			createAZ = volume.ChooseZoneForVolume(adminSetOfZones, volumeOptions.PVCName)
+			createAZ = volumeutil.ChooseZoneForVolume(adminSetOfZones, volumeOptions.PVCName)
 		}
 	}
 	if volumeOptions.ZonePresent && !volumeOptions.ZonesPresent {
-		if err := volume.ValidateZone(volumeOptions.AvailabilityZone); err != nil {
+		if err := volumeutil.ValidateZone(volumeOptions.AvailabilityZone); err != nil {
 			return "", err
 		}
 		createAZ = volumeOptions.AvailabilityZone
@@ -2229,6 +2250,10 @@ func (c *Cloud) DeleteDisk(volumeName KubernetesVolumeID) (bool, error) {
 	}
 	available, err := c.checkIfAvailable(awsDisk, "deleting", "")
 	if err != nil {
+		if isAWSErrorVolumeNotFound(err) {
+			glog.V(2).Infof("Volume %s not found when deleting it, assuming it's deleted", awsDisk.awsID)
+			return false, nil
+		}
 		glog.Error(err)
 	}
 
@@ -2339,9 +2364,15 @@ func (c *Cloud) GetDiskPath(volumeName KubernetesVolumeID) (string, error) {
 
 // DiskIsAttached implements Volumes.DiskIsAttached
 func (c *Cloud) DiskIsAttached(diskName KubernetesVolumeID, nodeName types.NodeName) (bool, error) {
-	diskInfo, attached, err := c.checkIfAttachedToNode(diskName, nodeName)
-	if diskInfo == nil {
-		return true, err
+	_, attached, err := c.checkIfAttachedToNode(diskName, nodeName)
+	if err != nil {
+		if isAWSErrorVolumeNotFound(err) {
+			// The disk doesn't exist, can't be attached
+			glog.Warningf("DiskIsAttached called for volume %s on node %s but the volume does not exist", diskName, nodeName)
+			return false, nil
+		} else {
+			return true, err
+		}
 	}
 
 	return attached, nil
@@ -2433,7 +2464,7 @@ func (c *Cloud) ResizeDisk(
 	}
 	requestBytes := newSize.Value()
 	// AWS resizes in chunks of GiB (not GB)
-	requestGiB := volume.RoundUpSize(requestBytes, 1024*1024*1024)
+	requestGiB := volumeutil.RoundUpSize(requestBytes, 1024*1024*1024)
 	newSizeQuant := resource.MustParse(fmt.Sprintf("%dGi", requestGiB))
 
 	// If disk already if of greater or equal size than requested we return
@@ -2845,8 +2876,9 @@ func (c *Cloud) removeSecurityGroupIngress(securityGroupID string, removePermiss
 
 // Makes sure the security group exists.
 // For multi-cluster isolation, name must be globally unique, for example derived from the service UUID.
+// Additional tags can be specified
 // Returns the security group id or error
-func (c *Cloud) ensureSecurityGroup(name string, description string) (string, error) {
+func (c *Cloud) ensureSecurityGroup(name string, description string, additionalTags map[string]string) (string, error) {
 	groupID := ""
 	attempt := 0
 	for {
@@ -2912,7 +2944,7 @@ func (c *Cloud) ensureSecurityGroup(name string, description string) (string, er
 		return "", fmt.Errorf("created security group, but id was not returned: %s", name)
 	}
 
-	err := c.tagging.createTags(c.ec2, groupID, ResourceLifecycleOwned, nil)
+	err := c.tagging.createTags(c.ec2, groupID, ResourceLifecycleOwned, additionalTags)
 	if err != nil {
 		// If we retry, ensureClusterTags will recover from this - it
 		// will add the missing tags.  We could delete the security
@@ -3126,9 +3158,10 @@ func getPortSets(annotation string) (ports *portSets) {
 
 // buildELBSecurityGroupList returns list of SecurityGroups which should be
 // attached to ELB created by a service. List always consist of at least
-// 1 member which is an SG created for this service or a SG from the Global config. Extra groups can be
-// specified via annotation
-func (c *Cloud) buildELBSecurityGroupList(serviceName types.NamespacedName, loadBalancerName, annotation string) ([]string, error) {
+// 1 member which is an SG created for this service or a SG from the Global config.
+// Extra groups can be specified via annotation, as can extra tags for any
+// new groups.
+func (c *Cloud) buildELBSecurityGroupList(serviceName types.NamespacedName, loadBalancerName string, annotations map[string]string) ([]string, error) {
 	var err error
 	var securityGroupID string
 
@@ -3138,7 +3171,7 @@ func (c *Cloud) buildELBSecurityGroupList(serviceName types.NamespacedName, load
 		// Create a security group for the load balancer
 		sgName := "k8s-elb-" + loadBalancerName
 		sgDescription := fmt.Sprintf("Security group for Kubernetes ELB %s (%v)", loadBalancerName, serviceName)
-		securityGroupID, err = c.ensureSecurityGroup(sgName, sgDescription)
+		securityGroupID, err = c.ensureSecurityGroup(sgName, sgDescription, getLoadBalancerAdditionalTags(annotations))
 		if err != nil {
 			glog.Errorf("Error creating load balancer security group: %q", err)
 			return nil, err
@@ -3146,7 +3179,7 @@ func (c *Cloud) buildELBSecurityGroupList(serviceName types.NamespacedName, load
 	}
 	sgList := []string{securityGroupID}
 
-	for _, extraSG := range strings.Split(annotation, ",") {
+	for _, extraSG := range strings.Split(annotations[ServiceAnnotationLoadBalancerExtraSecurityGroups], ",") {
 		extraSG = strings.TrimSpace(extraSG)
 		if len(extraSG) > 0 {
 			sgList = append(sgList, extraSG)
@@ -3444,7 +3477,7 @@ func (c *Cloud) EnsureLoadBalancer(ctx context.Context, clusterName string, apiS
 
 	loadBalancerName := cloudprovider.GetLoadBalancerName(apiService)
 	serviceName := types.NamespacedName{Namespace: apiService.Namespace, Name: apiService.Name}
-	securityGroupIDs, err := c.buildELBSecurityGroupList(serviceName, loadBalancerName, annotations[ServiceAnnotationLoadBalancerExtraSecurityGroups])
+	securityGroupIDs, err := c.buildELBSecurityGroupList(serviceName, loadBalancerName, annotations)
 	if err != nil {
 		return nil, err
 	}
@@ -3648,7 +3681,11 @@ func findSecurityGroupForInstance(instance *ec2.Instance, taggedSecurityGroups m
 		// We create instances with one SG
 		// If users create multiple SGs, they must tag one of them as being k8s owned
 		if len(tagged) != 1 {
-			return nil, fmt.Errorf("Multiple tagged security groups found for instance %s; ensure only the k8s security group is tagged", instanceID)
+			taggedGroups := ""
+			for _, v := range tagged {
+				taggedGroups += fmt.Sprintf("%s(%s) ", *v.GroupId, *v.GroupName)
+			}
+			return nil, fmt.Errorf("Multiple tagged security groups found for instance %s; ensure only the k8s security group is tagged; the tagged groups were %v", instanceID, taggedGroups)
 		}
 		return tagged[0], nil
 	}
@@ -3928,12 +3965,22 @@ func (c *Cloud) EnsureLoadBalancerDeleted(ctx context.Context, clusterName strin
 							}
 						}
 
-						if len(v4rangesToRemove) > 0 || len(v6rangesToRemove) > 0 {
+						// ipv4 and ipv6 removals cannot be included in the same permission
+						if len(v4rangesToRemove) > 0 {
 							// create a new *IpPermission to not accidentally remove UserIdGroupPairs
 							removedPermission := &ec2.IpPermission{
 								FromPort:   matchingGroups[i].IpPermissions[j].FromPort,
 								IpProtocol: matchingGroups[i].IpPermissions[j].IpProtocol,
 								IpRanges:   v4rangesToRemove,
+								ToPort:     matchingGroups[i].IpPermissions[j].ToPort,
+							}
+							removes = append(removes, removedPermission)
+						}
+						if len(v6rangesToRemove) > 0 {
+							// create a new *IpPermission to not accidentally remove UserIdGroupPairs
+							removedPermission := &ec2.IpPermission{
+								FromPort:   matchingGroups[i].IpPermissions[j].FromPort,
+								IpProtocol: matchingGroups[i].IpPermissions[j].IpProtocol,
 								Ipv6Ranges: v6rangesToRemove,
 								ToPort:     matchingGroups[i].IpPermissions[j].ToPort,
 							}
@@ -4282,13 +4329,4 @@ func setNodeDisk(
 		nodeDiskMap[nodeName] = volumeMap
 	}
 	volumeMap[volumeID] = check
-}
-
-func recordAwsMetric(actionName string, timeTaken float64, err error) {
-	if err != nil {
-		awsApiErrorMetric.With(prometheus.Labels{"request": actionName}).Inc()
-	} else {
-		awsApiMetric.With(prometheus.Labels{"request": actionName}).Observe(timeTaken)
-	}
-
 }

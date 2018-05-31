@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -44,11 +45,11 @@ const (
 type KubeletConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 
-	// podManifestPath is the path to the directory containing pod manifests to
-	// run, or the path to a single manifest file.
+	// staticPodPath is the path to the directory containing local (static) pods to
+	// run, or the path to a single static pod file.
 	// Default: ""
 	// +optional
-	PodManifestPath string `json:"podManifestPath,omitempty"`
+	StaticPodPath string `json:"staticPodPath,omitempty"`
 	// syncFrequency is the max period between synchronizing running
 	// containers and config.
 	// Default: "1m"
@@ -63,14 +64,14 @@ type KubeletConfiguration struct {
 	// Default: "20s"
 	// +optional
 	HTTPCheckFrequency metav1.Duration `json:"httpCheckFrequency,omitempty"`
-	// manifestURL is the URL for accessing the container manifest
+	// staticPodURL is the URL for accessing static pods to run
 	// Default: ""
 	// +optional
-	ManifestURL string `json:"manifestURL,omitempty"`
-	// manifestURLHeader is a map of slices with HTTP headers to use when accessing the manifestURL
+	StaticPodURL string `json:"staticPodURL,omitempty"`
+	// staticPodURLHeader is a map of slices with HTTP headers to use when accessing the podURL
 	// Default: nil
 	// +optional
-	ManifestURLHeader map[string][]string `json:"manifestURLHeader,omitempty"`
+	StaticPodURLHeader map[string][]string `json:"staticPodURLHeader,omitempty"`
 	// address is the IP address for the Kubelet to serve on (set to 0.0.0.0
 	// for all interfaces).
 	// Default: "0.0.0.0"
@@ -107,6 +108,21 @@ type KubeletConfiguration struct {
 	// Default: ""
 	// +optional
 	TLSMinVersion string `json:"tlsMinVersion,omitempty"`
+	// rotateCertificates enables client certificate rotation. The Kubelet will request a
+	// new certificate from the certificates.k8s.io API. This requires an approver to approve the
+	// certificate signing requests. The RotateKubeletClientCertificate feature
+	// must be enabled.
+	// Default: false
+	// +optional
+	RotateCertificates bool `json:"rotateCertificates,omitempty"`
+	// serverTLSBootstrap enables server certificate bootstrap. Instead of self
+	// signing a serving certificate, the Kubelet will request a certificate from
+	// the certificates.k8s.io API. This requires an approver to approve the
+	// certificate signing requests. The RotateKubeletServerCertificate feature
+	// must be enabled.
+	// Default: false
+	// +optional
+	ServerTLSBootstrap bool `json:"serverTLSBootstrap,omitempty"`
 	// authentication specifies how requests to the Kubelet's server are authenticated
 	// Defaults:
 	//   anonymous:
@@ -249,6 +265,11 @@ type KubeletConfiguration struct {
 	// Default: "10s"
 	// +optional
 	CPUManagerReconcilePeriod metav1.Duration `json:"cpuManagerReconcilePeriod,omitempty"`
+	// Map of QoS resource reservation percentages (memory only for now).
+	// Requires the QOSReserved feature gate to be enabled.
+	// Default: nil
+	// +optional
+	QOSReserved map[string]string `json:"qosReserved,omitempty"`
 	// runtimeRequestTimeout is the timeout for all runtime requests except long running
 	// requests - pull, logs, exec and attach.
 	// Default: "2m"
@@ -390,6 +411,14 @@ type KubeletConfiguration struct {
 	// Default: true
 	// +optional
 	FailSwapOn *bool `json:"failSwapOn,omitempty"`
+	// A quantity defines the maximum size of the container log file before it is rotated. For example: "5Mi" or "256Ki".
+	// Default: "10Mi"
+	// +optional
+	ContainerLogMaxSize string `json:"containerLogMaxSize,omitempty"`
+	// Maximum number of container log files that can be present for a container.
+	// Default: 5
+	// +optional
+	ContainerLogMaxFiles *int32 `json:"containerLogMaxFiles,omitempty"`
 
 	/* following flags are meant for Node Allocatable */
 
@@ -491,4 +520,16 @@ type KubeletAnonymousAuthentication struct {
 	// Anonymous requests have a username of system:anonymous, and a group name of system:unauthenticated.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// SerializedNodeConfigSource allows us to serialize v1.NodeConfigSource.
+// This type is used internally by the Kubelet for tracking checkpointed dynamic configs.
+// It exists in the kubeletconfig API group because it is classified as a versioned input to the Kubelet.
+type SerializedNodeConfigSource struct {
+	metav1.TypeMeta `json:",inline"`
+	// Source is the source that we are serializing
+	// +optional
+	Source v1.NodeConfigSource `json:"source,omitempty" protobuf:"bytes,1,opt,name=source"`
 }

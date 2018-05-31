@@ -30,7 +30,6 @@ import (
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
 )
 
 type awsElasticBlockStoreAttacher struct {
@@ -60,7 +59,7 @@ func (plugin *awsElasticBlockStorePlugin) GetDeviceMountRefs(deviceMountPath str
 }
 
 func (attacher *awsElasticBlockStoreAttacher) Attach(spec *volume.Spec, nodeName types.NodeName) (string, error) {
-	volumeSource, readOnly, err := getVolumeSource(spec)
+	volumeSource, _, err := getVolumeSource(spec)
 	if err != nil {
 		return "", err
 	}
@@ -69,7 +68,7 @@ func (attacher *awsElasticBlockStoreAttacher) Attach(spec *volume.Spec, nodeName
 
 	// awsCloud.AttachDisk checks if disk is already attached to node and
 	// succeeds in that case, so no need to do that separately.
-	devicePath, err := attacher.awsVolumes.AttachDisk(volumeID, nodeName, readOnly)
+	devicePath, err := attacher.awsVolumes.AttachDisk(volumeID, nodeName)
 	if err != nil {
 		glog.Errorf("Error attaching volume %q to node %q: %+v", volumeID, nodeName, err)
 		return "", err
@@ -219,8 +218,8 @@ func (attacher *awsElasticBlockStoreAttacher) MountDevice(spec *volume.Spec, dev
 		options = append(options, "ro")
 	}
 	if notMnt {
-		diskMounter := volumehelper.NewSafeFormatAndMountFromHost(awsElasticBlockStorePluginName, attacher.host)
-		mountOptions := volume.MountOptionFromSpec(spec, options...)
+		diskMounter := volumeutil.NewSafeFormatAndMountFromHost(awsElasticBlockStorePluginName, attacher.host)
+		mountOptions := volumeutil.MountOptionFromSpec(spec, options...)
 		err = diskMounter.FormatAndMount(devicePath, deviceMountPath, volumeSource.FSType, mountOptions)
 		if err != nil {
 			os.Remove(deviceMountPath)

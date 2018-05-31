@@ -3,7 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "go_default_library",
     srcs = [
-        "config.go",
+        "helper.go",
         "insecure_serving.go",
         "serve.go",
     ],
@@ -15,14 +15,15 @@ go_library(
         "//pkg/util/configz:go_default_library",
         "//vendor/github.com/golang/glog:go_default_library",
         "//vendor/github.com/prometheus/client_golang/prometheus:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/wait:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/endpoints/filters:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/endpoints/request:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/server:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/server/filters:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/server/healthz:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/server/mux:go_default_library",
+        "//vendor/k8s.io/apiserver/pkg/server/routes:go_default_library",
         "//vendor/k8s.io/client-go/kubernetes:go_default_library",
-        "//vendor/k8s.io/client-go/rest:go_default_library",
-        "//vendor/k8s.io/client-go/tools/record:go_default_library",
     ],
 )
 

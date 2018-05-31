@@ -23,7 +23,6 @@ import (
 )
 
 func TestExtractVmssVMName(t *testing.T) {
-	ss := &scaleSet{}
 	cases := []struct {
 		description        string
 		vmName             string
@@ -47,10 +46,16 @@ func TestExtractVmssVMName(t *testing.T) {
 			expectedScaleSet:   "vm",
 			expectedInstanceID: "1234",
 		},
+		{
+			description:        "correct vmss VM name with Extra Separator should return correct scaleSet and instanceID",
+			vmName:             "vm_test_1234",
+			expectedScaleSet:   "vm_test",
+			expectedInstanceID: "1234",
+		},
 	}
 
 	for _, c := range cases {
-		ssName, instanceID, err := ss.extractVmssVMName(c.vmName)
+		ssName, instanceID, err := extractVmssVMName(c.vmName)
 		if c.expectError {
 			assert.Error(t, err, c.description)
 			continue

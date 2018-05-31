@@ -17,8 +17,8 @@ limitations under the License.
 package dns
 
 const (
-	// v180AndAboveKubeDNSDeployment is the kube-dns Deployment manifest for the kube-dns manifest for v1.7+
-	v180AndAboveKubeDNSDeployment = `
+	// KubeDNSDeployment is the kube-dns Deployment manifest for the kube-dns manifest for v1.7+
+	KubeDNSDeployment = `
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -196,6 +196,8 @@ metadata:
     kubernetes.io/name: "KubeDNS"
   name: kube-dns
   namespace: kube-system
+  annotations:
+    prometheus.io/scrape: "true"
   # Without this resourceVersion value, an update of the Service between versions will yield:
   #   Service "kube-dns" is invalid: metadata.resourceVersion: Invalid value: "": must be specified for an update
   resourceVersion: "0"
@@ -243,18 +245,6 @@ spec:
         operator: Exists
       - key: {{ .MasterTaintKey }}
         effect: NoSchedule
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: k8s-app
-                  operator: In
-                  values:
-                  - coredns
-              topologyKey: kubernetes.io/hostname
       containers:
       - name: coredns
         image: coredns/coredns:{{ .Version }}
@@ -275,6 +265,9 @@ spec:
           protocol: UDP
         - containerPort: 53
           name: dns-tcp
+          protocol: TCP
+        - containerPort: 9153
+          name: metrics
           protocol: TCP
         livenessProbe:
           httpGet:
@@ -307,15 +300,16 @@ data:
     .:53 {
         errors
         health
-        kubernetes {{ .DNSDomain }} {{ .ServiceCIDR }} {
+        kubernetes {{ .DNSDomain }} in-addr.arpa ip6.arpa {
            pods insecure
-           upstream /etc/resolv.conf
+           upstream
            fallthrough in-addr.arpa ip6.arpa
-        }
+        }{{ .Federation }}
         prometheus :9153
-        proxy . /etc/resolv.conf
+        proxy . {{ .UpstreamNameserver }}
         cache 30
-    }
+        reload
+    }{{ .StubDomain }}
 `
 	// CoreDNSClusterRole is the CoreDNS ClusterRole manifest
 	CoreDNSClusterRole = `

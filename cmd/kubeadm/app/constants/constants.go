@@ -65,6 +65,49 @@ const (
 	// APIServerKubeletClientCertCommonName defines kubelet client certificate common name (CN)
 	APIServerKubeletClientCertCommonName = "kube-apiserver-kubelet-client"
 
+	// EtcdCACertAndKeyBaseName defines etcd's CA certificate and key base name
+	EtcdCACertAndKeyBaseName = "etcd/ca"
+	// EtcdCACertName defines etcd's CA certificate name
+	EtcdCACertName = "etcd/ca.crt"
+	// EtcdCAKeyName defines etcd's CA key name
+	EtcdCAKeyName = "etcd/ca.key"
+
+	// EtcdServerCertAndKeyBaseName defines etcd's server certificate and key base name
+	EtcdServerCertAndKeyBaseName = "etcd/server"
+	// EtcdServerCertName defines etcd's server certificate name
+	EtcdServerCertName = "etcd/server.crt"
+	// EtcdServerKeyName defines etcd's server key name
+	EtcdServerKeyName = "etcd/server.key"
+	// EtcdServerCertCommonName defines etcd's server certificate common name (CN)
+	EtcdServerCertCommonName = "kube-etcd"
+
+	// EtcdPeerCertAndKeyBaseName defines etcd's peer certificate and key base name
+	EtcdPeerCertAndKeyBaseName = "etcd/peer"
+	// EtcdPeerCertName defines etcd's peer certificate name
+	EtcdPeerCertName = "etcd/peer.crt"
+	// EtcdPeerKeyName defines etcd's peer key name
+	EtcdPeerKeyName = "etcd/peer.key"
+	// EtcdPeerCertCommonName defines etcd's peer certificate common name (CN)
+	EtcdPeerCertCommonName = "kube-etcd-peer"
+
+	// EtcdHealthcheckClientCertAndKeyBaseName defines etcd's healthcheck client certificate and key base name
+	EtcdHealthcheckClientCertAndKeyBaseName = "etcd/healthcheck-client"
+	// EtcdHealthcheckClientCertName defines etcd's healthcheck client certificate name
+	EtcdHealthcheckClientCertName = "etcd/healthcheck-client.crt"
+	// EtcdHealthcheckClientKeyName defines etcd's healthcheck client key name
+	EtcdHealthcheckClientKeyName = "etcd/healthcheck-client.key"
+	// EtcdHealthcheckClientCertCommonName defines etcd's healthcheck client certificate common name (CN)
+	EtcdHealthcheckClientCertCommonName = "kube-etcd-healthcheck-client"
+
+	// APIServerEtcdClientCertAndKeyBaseName defines apiserver's etcd client certificate and key base name
+	APIServerEtcdClientCertAndKeyBaseName = "apiserver-etcd-client"
+	// APIServerEtcdClientCertName defines apiserver's etcd client certificate name
+	APIServerEtcdClientCertName = "apiserver-etcd-client.crt"
+	// APIServerEtcdClientKeyName defines apiserver's etcd client key name
+	APIServerEtcdClientKeyName = "apiserver-etcd-client.key"
+	// APIServerEtcdClientCertCommonName defines apiserver's etcd client certificate common name (CN)
+	APIServerEtcdClientCertCommonName = "kube-apiserver-etcd-client"
+
 	// ServiceAccountKeyBaseName defines SA key base name
 	ServiceAccountKeyBaseName = "sa"
 	// ServiceAccountPublicKeyName defines SA public key base name
@@ -118,15 +161,12 @@ const (
 	// system:nodes group subject is removed if present.
 	NodesClusterRoleBinding = "system:node"
 
-	// KubeletBaseConfigMapRoleName defines the base kubelet configuration ConfigMap.
-	KubeletBaseConfigMapRoleName = "kubeadm:kubelet-base-configmap"
-
 	// APICallRetryInterval defines how long kubeadm should wait before retrying a failed API operation
 	APICallRetryInterval = 500 * time.Millisecond
 	// DiscoveryRetryInterval specifies how long kubeadm should wait before retrying to connect to the master when doing discovery
 	DiscoveryRetryInterval = 5 * time.Second
-	// MarkMasterTimeout specifies how long kubeadm should wait for applying the label and taint on the master before timing out
-	MarkMasterTimeout = 2 * time.Minute
+	// PatchNodeTimeout specifies how long kubeadm should wait for applying the label and taint on the master before timing out
+	PatchNodeTimeout = 2 * time.Minute
 	// UpdateNodeTimeout specifies how long kubeadm should wait for updating node with the initial remote configuration of kubelet before timing out
 	UpdateNodeTimeout = 2 * time.Minute
 
@@ -148,27 +188,23 @@ const (
 	// MasterConfigurationConfigMapKey specifies in what ConfigMap key the master configuration should be stored
 	MasterConfigurationConfigMapKey = "MasterConfiguration"
 
-	// KubeletBaseConfigurationConfigMap specifies in what ConfigMap in the kube-system namespace the initial remote configuration of kubelet should be stored
-	KubeletBaseConfigurationConfigMap = "kubelet-base-config-1.9"
+	// KubeletBaseConfigurationConfigMapPrefix specifies in what ConfigMap in the kube-system namespace the initial remote configuration of kubelet should be stored
+	KubeletBaseConfigurationConfigMapPrefix = "kubelet-config-"
 
 	// KubeletBaseConfigurationConfigMapKey specifies in what ConfigMap key the initial remote configuration of kubelet should be stored
-	// TODO: Use the constant ("kubelet.config.k8s.io") defined in pkg/kubelet/kubeletconfig/util/keys/keys.go
-	// after https://github.com/kubernetes/kubernetes/pull/53833 being merged.
 	KubeletBaseConfigurationConfigMapKey = "kubelet"
 
-	// KubeletBaseConfigurationDir specifies the directory on the node where stores the initial remote configuration of kubelet
-	KubeletBaseConfigurationDir = "/var/lib/kubelet/config/init"
+	// KubeletBaseConfigMapRolePrefix defines the base kubelet configuration ConfigMap.
+	KubeletBaseConfigMapRolePrefix = "kubeadm:kubelet-config-"
 
-	// KubeletBaseConfigurationFile specifies the file name on the node which stores initial remote configuration of kubelet
-	// TODO: Use the constant ("kubelet.config.k8s.io") defined in pkg/kubelet/kubeletconfig/util/keys/keys.go
-	// after https://github.com/kubernetes/kubernetes/pull/53833 being merged.
-	KubeletBaseConfigurationFile = "kubelet"
+	// KubeletConfigurationFile specifies the file name on the node which stores initial remote configuration of kubelet
+	KubeletConfigurationFile = "/var/lib/kubelet/config.yaml"
 
 	// MinExternalEtcdVersion indicates minimum external etcd version which kubeadm supports
-	MinExternalEtcdVersion = "3.1.11"
+	MinExternalEtcdVersion = "3.2.17"
 
 	// DefaultEtcdVersion indicates the default etcd version that kubeadm uses
-	DefaultEtcdVersion = "3.2.14"
+	DefaultEtcdVersion = "3.2.18"
 
 	// Etcd defines variable used internally when referring to etcd component
 	Etcd = "etcd"
@@ -216,6 +252,19 @@ const (
 	KubeAuditPolicyLogVolumeName = "audit-log"
 	// StaticPodAuditPolicyLogDir is the name of the directory in the static pod that will have the audit logs
 	StaticPodAuditPolicyLogDir = "/var/log/kubernetes/audit"
+
+	// LeaseEndpointReconcilerType will select a storage based reconciler
+	// Copied from pkg/master/reconcilers to avoid pulling extra dependencies
+	// TODO: Import this constant from a consts only package, that does not pull any further dependencies.
+	LeaseEndpointReconcilerType = "lease"
+
+	// KubeletEnvFile is a file "kubeadm init" writes at runtime. Using that interface, kubeadm can customize certain
+	// kubelet flags conditionally based on the environment at runtime. Also, parameters given to the configuration file
+	// might be passed through this file. "kubeadm init" writes one variable, with the name ${KubeletEnvFileVariableName}.
+	KubeletEnvFile = "/var/lib/kubelet/kubeadm-flags.env"
+
+	// KubeletEnvFileVariableName specifies the shell script variable name "kubeadm init" should write a value to in KubeletEnvFile
+	KubeletEnvFileVariableName = "KUBELET_KUBEADM_ARGS"
 )
 
 var (
@@ -231,28 +280,26 @@ var (
 		Effect: v1.TaintEffectNoSchedule,
 	}
 
-	// AuthorizationPolicyPath defines the supported location of authorization policy file
-	AuthorizationPolicyPath = filepath.Join(KubernetesDir, "abac_policy.json")
-	// AuthorizationWebhookConfigPath defines the supported location of webhook config file
-	AuthorizationWebhookConfigPath = filepath.Join(KubernetesDir, "webhook_authz.conf")
-
 	// DefaultTokenUsages specifies the default functions a token will get
 	DefaultTokenUsages = bootstrapapi.KnownTokenUsages
+
+	// DefaultTokenGroups specifies the default groups that this token will authenticate as when used for authentication
+	DefaultTokenGroups = []string{NodeBootstrapTokenAuthGroup}
 
 	// MasterComponents defines the master component names
 	MasterComponents = []string{KubeAPIServer, KubeControllerManager, KubeScheduler}
 
 	// MinimumControlPlaneVersion specifies the minimum control plane version kubeadm can deploy
-	MinimumControlPlaneVersion = version.MustParseSemantic("v1.9.0")
+	MinimumControlPlaneVersion = version.MustParseSemantic("v1.10.0")
 
 	// MinimumKubeletVersion specifies the minimum version of kubelet which kubeadm supports
-	MinimumKubeletVersion = version.MustParseSemantic("v1.9.0")
+	MinimumKubeletVersion = version.MustParseSemantic("v1.10.0")
 
 	// SupportedEtcdVersion lists officially supported etcd versions with corresponding kubernetes releases
 	SupportedEtcdVersion = map[uint8]string{
-		9:  "3.1.11",
-		10: "3.2.14",
-		11: "3.2.14",
+		10: "3.1.12",
+		11: "3.2.18",
+		12: "3.2.18",
 	}
 )
 
@@ -271,7 +318,7 @@ func EtcdSupportedVersion(versionString string) (*version.Version, error) {
 		}
 		return etcdVersion, nil
 	}
-	return nil, fmt.Errorf("Unsupported or unknown kubernetes version")
+	return nil, fmt.Errorf("Unsupported or unknown kubernetes version(%v)", kubernetesVersion)
 }
 
 // GetStaticPodDirectory returns the location on the disk where the Static Pod should be present

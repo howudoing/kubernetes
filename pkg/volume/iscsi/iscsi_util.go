@@ -33,6 +33,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
 	volumeutil "k8s.io/kubernetes/pkg/volume/util"
+	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
 )
 
 var (
@@ -395,24 +396,15 @@ func globalPDPathOperation(b iscsiDiskMounter) func(iscsiDiskMounter, string, *I
 
 // DetachDisk unmounts and detaches a volume from node
 func (util *ISCSIUtil) DetachDisk(c iscsiDiskUnmounter, mntPath string) error {
-	_, cnt, err := mount.GetDeviceNameFromMount(c.mounter, mntPath)
-	if err != nil {
-		glog.Errorf("iscsi detach disk: failed to get device from mnt: %s\nError: %v", mntPath, err)
-		return err
-	}
 	if pathExists, pathErr := volumeutil.PathExists(mntPath); pathErr != nil {
 		return fmt.Errorf("Error checking if path exists: %v", pathErr)
 	} else if !pathExists {
 		glog.Warningf("Warning: Unmount skipped because path does not exist: %v", mntPath)
 		return nil
 	}
-	if err = c.mounter.Unmount(mntPath); err != nil {
+	if err := c.mounter.Unmount(mntPath); err != nil {
 		glog.Errorf("iscsi detach disk: failed to unmount: %s\nError: %v", mntPath, err)
 		return err
-	}
-	cnt--
-	if cnt != 0 {
-		return nil
 	}
 	// if device is no longer used, see if need to logout the target
 	device, prefix, err := extractDeviceAndPrefix(mntPath)
@@ -518,10 +510,10 @@ func (util *ISCSIUtil) DetachBlockISCSIDisk(c iscsiDiskUnmapper, mapPath string)
 	// GenerateUnmapDeviceFunc() in operation_generator. As a result, these plugins fail to get
 	// and remove loopback device then it will be remained on kubelet node. To avoid the problem,
 	// local attach plugins needs to remove loopback device during TearDownDevice().
-	blkUtil := volumeutil.NewBlockVolumePathHandler()
-	loop, err := volumeutil.BlockVolumePathHandler.GetLoopDevice(blkUtil, devicePath)
+	blkUtil := volumepathhandler.NewBlockVolumePathHandler()
+	loop, err := volumepathhandler.BlockVolumePathHandler.GetLoopDevice(blkUtil, devicePath)
 	if err != nil {
-		if err.Error() != volumeutil.ErrDeviceNotFound {
+		if err.Error() != volumepathhandler.ErrDeviceNotFound {
 			return fmt.Errorf("failed to get loopback for device: %v, err: %v", devicePath, err)
 		}
 		glog.Warning("iscsi: loopback for device: %s not found", device)
@@ -533,7 +525,7 @@ func (util *ISCSIUtil) DetachBlockISCSIDisk(c iscsiDiskUnmapper, mapPath string)
 	}
 	if len(loop) != 0 {
 		// The volume was successfully detached from node. We can safely remove the loopback.
-		err = volumeutil.BlockVolumePathHandler.RemoveLoopDevice(blkUtil, loop)
+		err = volumepathhandler.BlockVolumePathHandler.RemoveLoopDevice(blkUtil, loop)
 		if err != nil {
 			return fmt.Errorf("failed to remove loopback :%v, err: %v", loop, err)
 		}

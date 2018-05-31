@@ -59,27 +59,44 @@ func TestValidateTokenDiscovery(t *testing.T) {
 	}
 }
 
-func TestValidateAuthorizationModes(t *testing.T) {
+func TestValidateValidateTokenUsages(t *testing.T) {
 	var tests = []struct {
-		s        []string
+		u        []string
 		f        *field.Path
 		expected bool
 	}{
-		{[]string{""}, nil, false},
-		{[]string{"rBAC"}, nil, false},                               // mode not supported
-		{[]string{"rBAC", "Webhook"}, nil, false},                    // mode not supported
-		{[]string{"RBAC", "Webhook"}, nil, false},                    // mode Node required
-		{[]string{"Node", "RBAC", "Webhook", "Webhook"}, nil, false}, // no duplicates allowed
-		{[]string{"not valid"}, nil, false},                          // invalid mode
-		{[]string{"Node", "RBAC"}, nil, true},                        // supported
-		{[]string{"RBAC", "Node"}, nil, true},                        // supported
-		{[]string{"Node", "RBAC", "Webhook", "ABAC"}, nil, true},     // supported
+		{[]string{}, nil, true},                            // supported (no usages)
+		{[]string{"signing", "authentication"}, nil, true}, // supported
+		{[]string{"something else"}, nil, false},           // usage not supported
 	}
 	for _, rt := range tests {
-		actual := ValidateAuthorizationModes(rt.s, rt.f)
+		actual := ValidateTokenUsages(rt.u, rt.f)
 		if (len(actual) == 0) != rt.expected {
 			t.Errorf(
-				"failed ValidateAuthorizationModes:\n\texpected: %t\n\t  actual: %t",
+				"failed ValidateTokenUsages:\n\texpected: %t\n\t  actual: %t",
+				rt.expected,
+				(len(actual) == 0),
+			)
+		}
+	}
+}
+
+func TestValidateTokenGroups(t *testing.T) {
+	var tests = []struct {
+		u        []string
+		g        []string
+		f        *field.Path
+		expected bool
+	}{
+		{[]string{"some usage"}, []string{"some group"}, nil, false},                       // groups doesn't makes sense if usage authentication
+		{[]string{"authentication"}, []string{"some group"}, nil, false},                   // group not supported
+		{[]string{"authentication"}, []string{"system:bootstrappers:anygroup"}, nil, true}, // supported
+	}
+	for _, rt := range tests {
+		actual := ValidateTokenGroups(rt.u, rt.g, rt.f)
+		if (len(actual) == 0) != rt.expected {
+			t.Errorf(
+				"failed ValidateTokenGroups:\n\texpected: %t\n\t  actual: %t",
 				rt.expected,
 				(len(actual) == 0),
 			)
@@ -102,7 +119,7 @@ func TestValidateNodeName(t *testing.T) {
 		actual := ValidateNodeName(rt.s, rt.f)
 		if (len(actual) == 0) != rt.expected {
 			t.Errorf(
-				"failed ValidateNodeName:\n\texpected: %t\n\t  actual: %t",
+				"failed ValidateNodeRegistration: kubeadm.NodeRegistrationOptions{Name:\n\texpected: %t\n\t  actual: %t",
 				rt.expected,
 				(len(actual) == 0),
 			)
@@ -110,31 +127,7 @@ func TestValidateNodeName(t *testing.T) {
 	}
 }
 
-func TestValidateCloudProvider(t *testing.T) {
-	var tests = []struct {
-		s        string
-		f        *field.Path
-		expected bool
-	}{
-		{"", nil, true},      // if not provided, ok, it's optional
-		{"1234", nil, false}, // not supported
-		{"awws", nil, false}, // not supported
-		{"aws", nil, true},   // supported
-		{"gce", nil, true},   // supported
-	}
-	for _, rt := range tests {
-		actual := ValidateCloudProvider(rt.s, rt.f)
-		if (len(actual) == 0) != rt.expected {
-			t.Errorf(
-				"failed ValidateCloudProvider:\n\texpected: %t\n\t  actual: %t",
-				rt.expected,
-				(len(actual) == 0),
-			)
-		}
-	}
-}
-
-func TestValidateAPIServerCertSANs(t *testing.T) {
+func TestValidateCertSANs(t *testing.T) {
 	var tests = []struct {
 		sans     []string
 		expected bool
@@ -148,10 +141,10 @@ func TestValidateAPIServerCertSANs(t *testing.T) {
 		{[]string{"my-hostname2", "my.other.subdomain", "2001:db8::10"}, true}, // supported
 	}
 	for _, rt := range tests {
-		actual := ValidateAPIServerCertSANs(rt.sans, nil)
+		actual := ValidateCertSANs(rt.sans, nil)
 		if (len(actual) == 0) != rt.expected {
 			t.Errorf(
-				"failed ValidateAPIServerCertSANs:\n\texpected: %t\n\t  actual: %t",
+				"failed ValidateCertSANs:\n\texpected: %t\n\t  actual: %t",
 				rt.expected,
 				(len(actual) == 0),
 			)
@@ -230,7 +223,73 @@ func TestValidateAPIEndpoint(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Valid IPv4 address and default port",
+			name: "Valid DNS ControlPlaneEndpoint (with port), AdvertiseAddress and default port",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "cp.k8s.io:8081",
+					AdvertiseAddress:     "4.5.6.7",
+					BindPort:             6443,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Valid IPv4 ControlPlaneEndpoint (with port), AdvertiseAddress and default port",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "1.2.3.4:8081",
+					AdvertiseAddress:     "4.5.6.7",
+					BindPort:             6443,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Valid IPv6 ControlPlaneEndpoint (with port), ControlPlaneEndpoint and port",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "[2001:db7::1]:8081",
+					AdvertiseAddress:     "2001:db7::2",
+					BindPort:             6443,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Valid DNS ControlPlaneEndpoint (without port), AdvertiseAddress and default port",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "cp.k8s.io",
+					AdvertiseAddress:     "4.5.6.7",
+					BindPort:             6443,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Valid IPv4 ControlPlaneEndpoint (without port), AdvertiseAddress and default port",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "1.2.3.4",
+					AdvertiseAddress:     "4.5.6.7",
+					BindPort:             6443,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Valid IPv6 ControlPlaneEndpoint (without port), ControlPlaneEndpoint and port",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "2001:db7::1",
+					AdvertiseAddress:     "2001:db7::2",
+					BindPort:             6443,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "Valid IPv4 AdvertiseAddress and default port",
 			s: &kubeadm.MasterConfiguration{
 				API: kubeadm.API{
 					AdvertiseAddress: "1.2.3.4",
@@ -240,7 +299,7 @@ func TestValidateAPIEndpoint(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "Valid IPv6 address and port",
+			name: "Valid IPv6 AdvertiseAddress and port",
 			s: &kubeadm.MasterConfiguration{
 				API: kubeadm.API{
 					AdvertiseAddress: "2001:db7::1",
@@ -250,7 +309,7 @@ func TestValidateAPIEndpoint(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "Invalid IPv4 address",
+			name: "Invalid IPv4 AdvertiseAddress",
 			s: &kubeadm.MasterConfiguration{
 				API: kubeadm.API{
 					AdvertiseAddress: "1.2.34",
@@ -260,7 +319,7 @@ func TestValidateAPIEndpoint(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "Invalid IPv6 address",
+			name: "Invalid IPv6 AdvertiseAddress",
 			s: &kubeadm.MasterConfiguration{
 				API: kubeadm.API{
 					AdvertiseAddress: "2001:db7:1",
@@ -269,9 +328,55 @@ func TestValidateAPIEndpoint(t *testing.T) {
 			},
 			expected: false,
 		},
+		{
+			name: "Invalid BindPort",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					AdvertiseAddress: "1.2.3.4",
+					BindPort:         0,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Invalid DNS ControlPlaneEndpoint",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "bad!!.k8s.io",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Invalid ipv4 ControlPlaneEndpoint",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "1..3.4",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Invalid ipv6 ControlPlaneEndpoint",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "1200::AB00:1234::2552:7777:1313",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "Invalid ControlPlaneEndpoint port",
+			s: &kubeadm.MasterConfiguration{
+				API: kubeadm.API{
+					ControlPlaneEndpoint: "1.2.3.4:0",
+				},
+			},
+			expected: false,
+		},
 	}
 	for _, rt := range tests {
-		actual := ValidateAPIEndpoint(rt.s, nil)
+		actual := ValidateAPIEndpoint(&rt.s.API, nil)
 		if (len(actual) == 0) != rt.expected {
 			t.Errorf(
 				"%s test case failed:\n\texpected: %t\n\t  actual: %t",
@@ -298,13 +403,12 @@ func TestValidateMasterConfiguration(t *testing.T) {
 					AdvertiseAddress: "1.2.3.4",
 					BindPort:         6443,
 				},
-				AuthorizationModes: []string{"Node", "RBAC"},
 				Networking: kubeadm.Networking{
 					ServiceSubnet: "10.96.0.1/12",
 					DNSDomain:     "cluster.local",
 				},
-				CertificatesDir: "/some/cert/dir",
-				NodeName:        nodename,
+				CertificatesDir:  "/some/cert/dir",
+				NodeRegistration: kubeadm.NodeRegistrationOptions{Name: nodename, CRISocket: "/some/path"},
 			}, false},
 		{"invalid missing token with IPv6 service subnet",
 			&kubeadm.MasterConfiguration{
@@ -312,13 +416,12 @@ func TestValidateMasterConfiguration(t *testing.T) {
 					AdvertiseAddress: "1.2.3.4",
 					BindPort:         6443,
 				},
-				AuthorizationModes: []string{"Node", "RBAC"},
 				Networking: kubeadm.Networking{
 					ServiceSubnet: "2001:db8::1/98",
 					DNSDomain:     "cluster.local",
 				},
-				CertificatesDir: "/some/cert/dir",
-				NodeName:        nodename,
+				CertificatesDir:  "/some/cert/dir",
+				NodeRegistration: kubeadm.NodeRegistrationOptions{Name: nodename, CRISocket: "/some/path"},
 			}, false},
 		{"invalid missing node name",
 			&kubeadm.MasterConfiguration{
@@ -326,7 +429,6 @@ func TestValidateMasterConfiguration(t *testing.T) {
 					AdvertiseAddress: "1.2.3.4",
 					BindPort:         6443,
 				},
-				AuthorizationModes: []string{"Node", "RBAC"},
 				Networking: kubeadm.Networking{
 					ServiceSubnet: "10.96.0.1/12",
 					DNSDomain:     "cluster.local",
@@ -340,15 +442,14 @@ func TestValidateMasterConfiguration(t *testing.T) {
 					AdvertiseAddress: "1.2.3.4",
 					BindPort:         6443,
 				},
-				AuthorizationModes: []string{"Node", "RBAC"},
 				Networking: kubeadm.Networking{
 					ServiceSubnet: "10.96.0.1/12",
 					DNSDomain:     "cluster.local",
 					PodSubnet:     "10.0.1.15",
 				},
-				CertificatesDir: "/some/other/cert/dir",
-				Token:           "abcdef.0123456789abcdef",
-				NodeName:        nodename,
+				CertificatesDir:  "/some/other/cert/dir",
+				Token:            "abcdef.0123456789abcdef",
+				NodeRegistration: kubeadm.NodeRegistrationOptions{Name: nodename, CRISocket: "/some/path"},
 			}, false},
 		{"valid master configuration with IPv4 service subnet",
 			&kubeadm.MasterConfiguration{
@@ -356,6 +457,11 @@ func TestValidateMasterConfiguration(t *testing.T) {
 					AdvertiseAddress: "1.2.3.4",
 					BindPort:         6443,
 				},
+				Etcd: kubeadm.Etcd{
+					Local: &kubeadm.LocalEtcd{
+						DataDir: "/some/path",
+					},
+				},
 				KubeProxy: kubeadm.KubeProxy{
 					Config: &kubeproxyconfigv1alpha1.KubeProxyConfiguration{
 						BindAddress:        "192.168.59.103",
@@ -382,15 +488,14 @@ func TestValidateMasterConfiguration(t *testing.T) {
 						},
 					},
 				},
-				AuthorizationModes: []string{"Node", "RBAC"},
 				Networking: kubeadm.Networking{
 					ServiceSubnet: "10.96.0.1/12",
 					DNSDomain:     "cluster.local",
 					PodSubnet:     "10.0.1.15/16",
 				},
-				CertificatesDir: "/some/other/cert/dir",
-				Token:           "abcdef.0123456789abcdef",
-				NodeName:        nodename,
+				CertificatesDir:  "/some/other/cert/dir",
+				Token:            "abcdef.0123456789abcdef",
+				NodeRegistration: kubeadm.NodeRegistrationOptions{Name: nodename, CRISocket: "/some/path"},
 			}, true},
 		{"valid master configuration using IPv6 service subnet",
 			&kubeadm.MasterConfiguration{
@@ -398,6 +503,11 @@ func TestValidateMasterConfiguration(t *testing.T) {
 					AdvertiseAddress: "1:2:3::4",
 					BindPort:         3446,
 				},
+				Etcd: kubeadm.Etcd{
+					Local: &kubeadm.LocalEtcd{
+						DataDir: "/some/path",
+					},
+				},
 				KubeProxy: kubeadm.KubeProxy{
 					Config: &kubeproxyconfigv1alpha1.KubeProxyConfiguration{
 						BindAddress:        "192.168.59.103",
@@ -424,14 +534,13 @@ func TestValidateMasterConfiguration(t *testing.T) {
 						},
 					},
 				},
-				AuthorizationModes: []string{"Node", "RBAC"},
 				Networking: kubeadm.Networking{
 					ServiceSubnet: "2001:db8::1/98",
 					DNSDomain:     "cluster.local",
 				},
-				CertificatesDir: "/some/other/cert/dir",
-				Token:           "abcdef.0123456789abcdef",
-				NodeName:        nodename,
+				CertificatesDir:  "/some/other/cert/dir",
+				Token:            "abcdef.0123456789abcdef",
+				NodeRegistration: kubeadm.NodeRegistrationOptions{Name: nodename, CRISocket: "/some/path"},
 			}, true},
 	}
 	for _, rt := range tests {
@@ -660,7 +769,7 @@ func TestValidateKubeProxyConfiguration(t *testing.T) {
 	}
 
 	for _, successCase := range successCases {
-		if errs := ValidateProxy(&successCase, nil); len(errs) != 0 {
+		if errs := ValidateProxy(successCase.KubeProxy.Config, nil); len(errs) != 0 {
 			t.Errorf("failed ValidateProxy: expect no errors but got %v", errs)
 		}
 	}
@@ -864,7 +973,7 @@ func TestValidateKubeProxyConfiguration(t *testing.T) {
 	}
 
 	for i, errorCase := range errorCases {
-		if errs := ValidateProxy(&errorCase.masterConfig, nil); len(errs) == 0 {
+		if errs := ValidateProxy(errorCase.masterConfig.KubeProxy.Config, nil); len(errs) == 0 {
 			t.Errorf("%d failed ValidateProxy: expected error for %s, but got no error", i, errorCase.msg)
 		} else if !strings.Contains(errs[0].Error(), errorCase.msg) {
 			t.Errorf("%d failed ValidateProxy: unexpected error: %v, expected: %s", i, errs[0], errorCase.msg)
@@ -995,7 +1104,7 @@ func TestValidateJoinDiscoveryTokenAPIServer(t *testing.T) {
 		},
 	}
 	for _, rt := range tests {
-		actual := ValidateJoinDiscoveryTokenAPIServer(rt.s, nil)
+		actual := ValidateJoinDiscoveryTokenAPIServer(rt.s.DiscoveryTokenAPIServers, nil)
 		if (len(actual) == 0) != rt.expected {
 			t.Errorf(
 				"failed ValidateJoinDiscoveryTokenAPIServer:\n\texpected: %t\n\t  actual: %t",

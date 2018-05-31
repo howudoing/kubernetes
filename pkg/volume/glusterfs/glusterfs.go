@@ -43,7 +43,6 @@ import (
 	"k8s.io/kubernetes/pkg/util/strings"
 	"k8s.io/kubernetes/pkg/volume"
 	volutil "k8s.io/kubernetes/pkg/volume/util"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
 )
 
 // ProbeVolumePlugins is the primary entrypoint for volume plugins.
@@ -111,12 +110,8 @@ func (plugin *glusterfsPlugin) GetVolumeName(spec *volume.Spec) (string, error) 
 }
 
 func (plugin *glusterfsPlugin) CanSupport(spec *volume.Spec) bool {
-	if (spec.PersistentVolume != nil && spec.PersistentVolume.Spec.Glusterfs == nil) ||
-		(spec.Volume != nil && spec.Volume.Glusterfs == nil) {
-		return false
-	}
-
-	return true
+	return (spec.PersistentVolume != nil && spec.PersistentVolume.Spec.Glusterfs != nil) ||
+		(spec.Volume != nil && spec.Volume.Glusterfs != nil)
 }
 
 func (plugin *glusterfsPlugin) RequiresRemount() bool {
@@ -178,7 +173,7 @@ func (plugin *glusterfsPlugin) newMounterInternal(spec *volume.Spec, ep *v1.Endp
 		hosts:        ep,
 		path:         source.Path,
 		readOnly:     readOnly,
-		mountOptions: volume.MountOptionFromSpec(spec),
+		mountOptions: volutil.MountOptionFromSpec(spec),
 	}, nil
 }
 
@@ -328,7 +323,7 @@ func (b *glusterfsMounter) setUpAtInternal(dir string) error {
 
 	}
 	options = append(options, "backup-volfile-servers="+dstrings.Join(addrlist[:], ":"))
-	mountOptions := volume.JoinMountOptions(b.mountOptions, options)
+	mountOptions := volutil.JoinMountOptions(b.mountOptions, options)
 
 	// with `backup-volfile-servers` mount option in place, it is not required to
 	// iterate over all the servers in the addrlist. A mount attempt with this option
@@ -402,18 +397,19 @@ func (plugin *glusterfsPlugin) newProvisionerInternal(options volume.VolumeOptio
 }
 
 type provisionerConfig struct {
-	url              string
-	user             string
-	userKey          string
-	secretNamespace  string
-	secretName       string
-	secretValue      string
-	clusterID        string
-	gidMin           int
-	gidMax           int
-	volumeType       gapi.VolumeDurabilityInfo
-	volumeOptions    []string
-	volumeNamePrefix string
+	url                string
+	user               string
+	userKey            string
+	secretNamespace    string
+	secretName         string
+	secretValue        string
+	clusterID          string
+	gidMin             int
+	gidMax             int
+	volumeType         gapi.VolumeDurabilityInfo
+	volumeOptions      []string
+	volumeNamePrefix   string
+	thinPoolSnapFactor float32
 }
 
 type glusterfsVolumeProvisioner struct {
@@ -502,7 +498,7 @@ func (plugin *glusterfsPlugin) collectGids(className string, gidTable *MinMaxAll
 
 		pvName := pv.ObjectMeta.Name
 
-		gidStr, ok := pv.Annotations[volumehelper.VolumeGidAnnotationKey]
+		gidStr, ok := pv.Annotations[volutil.VolumeGidAnnotationKey]
 
 		if !ok {
 			glog.Warningf("no GID found in pv %v", pvName)
@@ -583,7 +579,7 @@ func (plugin *glusterfsPlugin) getGidTable(className string, min int, max int) (
 }
 
 func (d *glusterfsVolumeDeleter) getGid() (int, bool, error) {
-	gidStr, ok := d.spec.Annotations[volumehelper.VolumeGidAnnotationKey]
+	gidStr, ok := d.spec.Annotations[volutil.VolumeGidAnnotationKey]
 
 	if !ok {
 		return 0, false, nil
@@ -669,7 +665,7 @@ func (d *glusterfsVolumeDeleter) Delete() error {
 }
 
 func (p *glusterfsVolumeProvisioner) Provision() (*v1.PersistentVolume, error) {
-	if !volume.AccessModesContainedInAll(p.plugin.GetAccessModes(), p.options.PVC.Spec.AccessModes) {
+	if !volutil.AccessModesContainedInAll(p.plugin.GetAccessModes(), p.options.PVC.Spec.AccessModes) {
 		return nil, fmt.Errorf("invalid AccessModes %v: only AccessModes %v are supported", p.options.PVC.Spec.AccessModes, p.plugin.GetAccessModes())
 	}
 
@@ -723,12 +719,12 @@ func (p *glusterfsVolumeProvisioner) Provision() (*v1.PersistentVolume, error) {
 	gidStr := strconv.FormatInt(int64(gid), 10)
 
 	pv.Annotations = map[string]string{
-		volumehelper.VolumeGidAnnotationKey:        gidStr,
-		volumehelper.VolumeDynamicallyCreatedByKey: heketiAnn,
-		glusterTypeAnn:                             "file",
-		"Description":                              glusterDescAnn,
-		v1.MountOptionAnnotation:                   "auto_unmount",
-		heketiVolIDAnn:                             volID,
+		volutil.VolumeGidAnnotationKey:        gidStr,
+		volutil.VolumeDynamicallyCreatedByKey: heketiAnn,
+		glusterTypeAnn:                        "file",
+		"Description":                         glusterDescAnn,
+		v1.MountOptionAnnotation:              "auto_unmount",
+		heketiVolIDAnn:                        volID,
 	}
 
 	pv.Spec.Capacity = v1.ResourceList{
@@ -743,8 +739,9 @@ func (p *glusterfsVolumeProvisioner) CreateVolume(gid int) (r *v1.GlusterfsVolum
 	capacity := p.options.PVC.Spec.Resources.Requests[v1.ResourceName(v1.ResourceStorage)]
 
 	// GlusterFS/heketi creates volumes in units of GiB.
-	sz := int(volume.RoundUpToGiB(capacity))
+	sz := int(volutil.RoundUpToGiB(capacity))
 	glog.V(2).Infof("create volume of size %dGiB", sz)
+
 	if p.url == "" {
 		glog.Errorf("REST server endpoint is empty")
 		return nil, 0, "", fmt.Errorf("failed to create glusterfs REST client, REST URL is empty")
@@ -764,7 +761,15 @@ func (p *glusterfsVolumeProvisioner) CreateVolume(gid int) (r *v1.GlusterfsVolum
 	}
 
 	gid64 := int64(gid)
-	volumeReq := &gapi.VolumeCreateRequest{Size: sz, Name: customVolumeName, Clusters: clusterIDs, Gid: gid64, Durability: p.volumeType, GlusterVolumeOptions: p.volumeOptions}
+	snaps := struct {
+		Enable bool    `json:"enable"`
+		Factor float32 `json:"factor"`
+	}{
+		true,
+		p.provisionerConfig.thinPoolSnapFactor,
+	}
+
+	volumeReq := &gapi.VolumeCreateRequest{Size: sz, Name: customVolumeName, Clusters: clusterIDs, Gid: gid64, Durability: p.volumeType, GlusterVolumeOptions: p.volumeOptions, Snapshot: snaps}
 	volume, err := cli.VolumeCreate(volumeReq)
 	if err != nil {
 		glog.Errorf("failed to create volume: %v", err)
@@ -931,6 +936,10 @@ func parseClassParameters(params map[string]string, kubeClient clientset.Interfa
 	parseVolumeType := ""
 	parseVolumeOptions := ""
 	parseVolumeNamePrefix := ""
+	parseThinPoolSnapFactor := ""
+
+	//thin pool snap factor default to 1.0
+	cfg.thinPoolSnapFactor = float32(1.0)
 
 	for k, v := range params {
 		switch dstrings.ToLower(k) {
@@ -985,6 +994,11 @@ func parseClassParameters(params map[string]string, kubeClient clientset.Interfa
 			if len(v) != 0 {
 				parseVolumeNamePrefix = v
 			}
+		case "snapfactor":
+			if len(v) != 0 {
+				parseThinPoolSnapFactor = v
+			}
+
 		default:
 			return nil, fmt.Errorf("invalid option %q for volume plugin %s", k, glusterfsPluginName)
 		}
@@ -1072,6 +1086,17 @@ func parseClassParameters(params map[string]string, kubeClient clientset.Interfa
 		}
 		cfg.volumeNamePrefix = parseVolumeNamePrefix
 	}
+
+	if len(parseThinPoolSnapFactor) != 0 {
+		thinPoolSnapFactor, err := strconv.ParseFloat(parseThinPoolSnapFactor, 32)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert snapfactor %v to float: %v", parseThinPoolSnapFactor, err)
+		}
+		if thinPoolSnapFactor < 1.0 || thinPoolSnapFactor > 100.0 {
+			return nil, fmt.Errorf("invalid snapshot factor %v, the value must be between 1 to 100", thinPoolSnapFactor)
+		}
+		cfg.thinPoolSnapFactor = float32(thinPoolSnapFactor)
+	}
 	return &cfg, nil
 }
 
@@ -1126,10 +1151,10 @@ func (plugin *glusterfsPlugin) ExpandVolumeDevice(spec *volume.Spec, newSize res
 
 	// Find out delta size
 	expansionSize := (newSize.Value() - oldSize.Value())
-	expansionSizeGiB := int(volume.RoundUpSize(expansionSize, volume.GIB))
+	expansionSizeGiB := int(volutil.RoundUpSize(expansionSize, volutil.GIB))
 
 	// Find out requested Size
-	requestGiB := volume.RoundUpToGiB(newSize)
+	requestGiB := volutil.RoundUpToGiB(newSize)
 
 	//Check the existing volume size
 	currentVolumeInfo, err := cli.VolumeInfo(volumeID)

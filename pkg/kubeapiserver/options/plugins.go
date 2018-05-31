@@ -34,13 +34,10 @@ import (
 	"k8s.io/kubernetes/plugin/pkg/admission/extendedresourcetoleration"
 	"k8s.io/kubernetes/plugin/pkg/admission/gc"
 	"k8s.io/kubernetes/plugin/pkg/admission/imagepolicy"
-	"k8s.io/kubernetes/plugin/pkg/admission/initialresources"
 	"k8s.io/kubernetes/plugin/pkg/admission/limitranger"
 	"k8s.io/kubernetes/plugin/pkg/admission/namespace/autoprovision"
 	"k8s.io/kubernetes/plugin/pkg/admission/namespace/exists"
 	"k8s.io/kubernetes/plugin/pkg/admission/noderestriction"
-	"k8s.io/kubernetes/plugin/pkg/admission/persistentvolume/label"
-	"k8s.io/kubernetes/plugin/pkg/admission/persistentvolume/resize"
 	"k8s.io/kubernetes/plugin/pkg/admission/podnodeselector"
 	"k8s.io/kubernetes/plugin/pkg/admission/podpreset"
 	"k8s.io/kubernetes/plugin/pkg/admission/podtolerationrestriction"
@@ -49,8 +46,10 @@ import (
 	"k8s.io/kubernetes/plugin/pkg/admission/security/podsecuritypolicy"
 	"k8s.io/kubernetes/plugin/pkg/admission/securitycontext/scdeny"
 	"k8s.io/kubernetes/plugin/pkg/admission/serviceaccount"
+	"k8s.io/kubernetes/plugin/pkg/admission/storage/persistentvolume/label"
+	"k8s.io/kubernetes/plugin/pkg/admission/storage/persistentvolume/resize"
+	"k8s.io/kubernetes/plugin/pkg/admission/storage/storageclass/setdefault"
 	"k8s.io/kubernetes/plugin/pkg/admission/storage/storageobjectinuseprotection"
-	"k8s.io/kubernetes/plugin/pkg/admission/storageclass/setdefault"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission"
@@ -68,7 +67,6 @@ var AllOrderedPlugins = []string{
 	exists.PluginName,                       // NamespaceExists
 	scdeny.PluginName,                       // SecurityContextDeny
 	antiaffinity.PluginName,                 // LimitPodHardAntiAffinityTopology
-	initialresources.PluginName,             // InitialResources
 	podpreset.PluginName,                    // PodPreset
 	limitranger.PluginName,                  // LimitRanger
 	serviceaccount.PluginName,               // ServiceAccount
@@ -109,7 +107,6 @@ func RegisterAllAdmissionPlugins(plugins *admission.Plugins) {
 	extendedresourcetoleration.Register(plugins)
 	gc.Register(plugins)
 	imagepolicy.Register(plugins)
-	initialresources.Register(plugins)
 	limitranger.Register(plugins)
 	autoprovision.Register(plugins)
 	exists.Register(plugins)
@@ -130,8 +127,17 @@ func RegisterAllAdmissionPlugins(plugins *admission.Plugins) {
 
 // DefaultOffAdmissionPlugins get admission plugins off by default for kube-apiserver.
 func DefaultOffAdmissionPlugins() sets.String {
-	defaultOffPlugins := sets.NewString(AllOrderedPlugins...)
-	defaultOffPlugins.Delete(lifecycle.PluginName)
+	defaultOnPlugins := sets.NewString(
+		lifecycle.PluginName,                //NamespaceLifecycle
+		limitranger.PluginName,              //LimitRanger
+		serviceaccount.PluginName,           //ServiceAccount
+		setdefault.PluginName,               //DefaultStorageClass
+		resize.PluginName,                   //PersistentVolumeClaimResize
+		defaulttolerationseconds.PluginName, //DefaultTolerationSeconds
+		mutatingwebhook.PluginName,          //MutatingAdmissionWebhook
+		validatingwebhook.PluginName,        //ValidatingAdmissionWebhook
+		resourcequota.PluginName,            //ResourceQuota
+	)
 
-	return defaultOffPlugins
+	return sets.NewString(AllOrderedPlugins...).Difference(defaultOnPlugins)
 }

@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
+	"k8s.io/kubernetes/pkg/kubectl/genericclioptions"
 	metricsv1alpha1api "k8s.io/metrics/pkg/apis/metrics/v1alpha1"
 	metricsv1beta1api "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 )
@@ -43,10 +44,10 @@ const (
 func TestTopSubcommandsExist(t *testing.T) {
 	initTestErrorHandler(t)
 
-	f, _, _, _ := cmdtesting.NewAPIFactory()
-	buf := bytes.NewBuffer([]byte{})
+	f := cmdtesting.NewTestFactory()
+	defer f.Cleanup()
 
-	cmd := NewCmdTop(f, buf, buf)
+	cmd := NewCmdTop(f, genericclioptions.NewTestIOStreamsDiscard())
 	if !cmd.HasSubCommands() {
 		t.Error("top command should have subcommands")
 	}

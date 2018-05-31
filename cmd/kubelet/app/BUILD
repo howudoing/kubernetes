@@ -20,36 +20,47 @@ go_library(
         "server.go",
     ] + select({
         "@io_bazel_rules_go//go/platform:android": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:darwin": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:dragonfly": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:freebsd": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "init_others.go",
             "server_linux.go",
         ],
         "@io_bazel_rules_go//go/platform:nacl": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:netbsd": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:openbsd": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:plan9": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:solaris": [
+            "init_others.go",
             "server_unsupported.go",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
+            "init_windows.go",
             "server_unsupported.go",
         ],
         "//conditions:default": [],
@@ -73,6 +84,7 @@ go_library(
         "//pkg/kubelet/apis/kubeletconfig:go_default_library",
         "//pkg/kubelet/apis/kubeletconfig/scheme:go_default_library",
         "//pkg/kubelet/apis/kubeletconfig/v1beta1:go_default_library",
+        "//pkg/kubelet/apis/kubeletconfig/validation:go_default_library",
         "//pkg/kubelet/cadvisor:go_default_library",
         "//pkg/kubelet/certificate:go_default_library",
         "//pkg/kubelet/certificate/bootstrap:go_default_library",
@@ -80,14 +92,14 @@ go_library(
         "//pkg/kubelet/config:go_default_library",
         "//pkg/kubelet/container:go_default_library",
         "//pkg/kubelet/dockershim:go_default_library",
+        "//pkg/kubelet/dockershim/network:go_default_library",
+        "//pkg/kubelet/dockershim/network/cni:go_default_library",
+        "//pkg/kubelet/dockershim/network/kubenet:go_default_library",
         "//pkg/kubelet/dockershim/remote:go_default_library",
         "//pkg/kubelet/eviction:go_default_library",
         "//pkg/kubelet/eviction/api:go_default_library",
         "//pkg/kubelet/kubeletconfig:go_default_library",
         "//pkg/kubelet/kubeletconfig/configfiles:go_default_library",
-        "//pkg/kubelet/network:go_default_library",
-        "//pkg/kubelet/network/cni:go_default_library",
-        "//pkg/kubelet/network/kubenet:go_default_library",
         "//pkg/kubelet/server:go_default_library",
         "//pkg/kubelet/server/streaming:go_default_library",
         "//pkg/kubelet/types:go_default_library",
@@ -131,6 +143,7 @@ go_library(
         "//pkg/volume/secret:go_default_library",
         "//pkg/volume/storageos:go_default_library",
         "//pkg/volume/vsphere_volume:go_default_library",
+        "//vendor/github.com/coreos/go-systemd/daemon:go_default_library",
         "//vendor/github.com/golang/glog:go_default_library",
         "//vendor/github.com/spf13/cobra:go_default_library",
         "//vendor/github.com/spf13/pflag:go_default_library",
@@ -160,6 +173,9 @@ go_library(
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
             "//vendor/golang.org/x/exp/inotify:go_default_library",
+        ],
+        "@io_bazel_rules_go//go/platform:windows": [
+            "//pkg/windows/service:go_default_library",
         ],
         "//conditions:default": [],
     }),

@@ -27,16 +27,8 @@ import (
 	dockerfilters "github.com/docker/docker/api/types/filters"
 	"github.com/golang/glog"
 
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/kubernetes/pkg/features"
+	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
-)
-
-const (
-	hypervIsolationAnnotationKey = "experimental.windows.kubernetes.io/isolation-type"
-
-	// Refer https://aka.ms/hyperv-container.
-	hypervIsolation = "hyperv"
 )
 
 func DefaultMemorySwap() int64 {
@@ -50,19 +42,10 @@ func (ds *dockerService) getSecurityOpts(seccompProfile string, separator rune) 
 	return nil, nil
 }
 
-func shouldIsolatedByHyperV(annotations map[string]string) bool {
-	if !utilfeature.DefaultFeatureGate.Enabled(features.HyperVContainer) {
-		return false
-	}
-
-	v, ok := annotations[hypervIsolationAnnotationKey]
-	return ok && v == hypervIsolation
-}
-
 // applyExperimentalCreateConfig applys experimental configures from sandbox annotations.
 func applyExperimentalCreateConfig(createConfig *dockertypes.ContainerCreateConfig, annotations map[string]string) {
-	if shouldIsolatedByHyperV(annotations) {
-		createConfig.HostConfig.Isolation = hypervIsolation
+	if kubeletapis.ShouldIsolatedByHyperV(annotations) {
+		createConfig.HostConfig.Isolation = kubeletapis.HypervIsolationValue
 
 		if networkMode := os.Getenv("CONTAINER_NETWORK"); networkMode == "" {
 			createConfig.HostConfig.NetworkMode = dockercontainer.NetworkMode("none")
@@ -77,9 +60,22 @@ func (ds *dockerService) updateCreateConfig(
 	podSandboxID string, securityOptSep rune, apiVersion *semver.Version) error {
 	if networkMode := os.Getenv("CONTAINER_NETWORK"); networkMode != "" {
 		createConfig.HostConfig.NetworkMode = dockercontainer.NetworkMode(networkMode)
-	} else if !shouldIsolatedByHyperV(sandboxConfig.Annotations) {
+	} else if !kubeletapis.ShouldIsolatedByHyperV(sandboxConfig.Annotations) {
 		// Todo: Refactor this call in future for calling methods directly in security_context.go
 		modifyHostOptionsForContainer(nil, podSandboxID, createConfig.HostConfig)
+	}
+
+	// Apply Windows-specific options if applicable.
+	if wc := config.GetWindows(); wc != nil {
+		rOpts := wc.GetResources()
+		if rOpts != nil {
+			createConfig.HostConfig.Resources = dockercontainer.Resources{
+				Memory:     rOpts.MemoryLimitInBytes,
+				CPUShares:  rOpts.CpuShares,
+				CPUCount:   rOpts.CpuCount,
+				CPUPercent: rOpts.CpuMaximum,
+			}
+		}
 	}
 
 	applyExperimentalCreateConfig(createConfig, sandboxConfig.Annotations)
@@ -119,7 +115,18 @@ func (ds *dockerService) determinePodIPBySandboxID(sandboxID string) string {
 		// Todo: Add a kernel version check for more validation
 
 		if networkMode := os.Getenv("CONTAINER_NETWORK"); networkMode == "" {
-			if r.HostConfig.Isolation == hypervIsolation {
+			// On Windows, every container that is created in a Sandbox, needs to invoke CNI plugin again for adding the Network,
+			// with the shared container name as NetNS info,
+			// This is passed down to the platform to replicate some necessary information to the new container
+
+			//
+			// This place is chosen as a hack for now, since ds.getIP would end up calling CNI's addToNetwork
+			// That is why addToNetwork is required to be idempotent
+
+			// Instead of relying on this call, an explicit call to addToNetwork should be
+			// done immediately after ContainerCreation, in case of Windows only. TBD Issue # to handle this
+
+			if r.HostConfig.Isolation == kubeletapis.HypervIsolationValue {
 				// Hyper-V only supports one container per Pod yet and the container will have a different
 				// IP address from sandbox. Return the first non-sandbox container IP as POD IP.
 				// TODO(feiskyer): remove this workaround after Hyper-V supports multiple containers per Pod.
@@ -131,18 +138,8 @@ func (ds *dockerService) determinePodIPBySandboxID(sandboxID string) string {
 				ds.getIP(sandboxID, r)
 			}
 		} else {
-			// On Windows, every container that is created in a Sandbox, needs to invoke CNI plugin again for adding the Network,
-			// with the shared container name as NetNS info,
-			// This is passed down to the platform to replicate some necessary information to the new container
-
-			//
-			// This place is chosen as a hack for now, since getContainerIP would end up calling CNI's addToNetwork
-			// That is why addToNetwork is required to be idempotent
-
-			// Instead of relying on this call, an explicit call to addToNetwork should be
-			// done immediately after ContainerCreation, in case of Windows only. TBD Issue # to handle this
-
-			if containerIP := getContainerIP(r); containerIP != "" {
+			// ds.getIP will call the CNI plugin to fetch the IP
+			if containerIP := ds.getIP(c.ID, r); containerIP != "" {
 				return containerIP
 			}
 		}
@@ -156,15 +153,4 @@ func getNetworkNamespace(c *dockertypes.ContainerJSON) (string, error) {
 	// Like docker, the referenced container id is used to figure out the network namespace id internally by the platform
 	// so returning the docker networkMode (which holds container:<ref containerid> for network namespace here
 	return string(c.HostConfig.NetworkMode), nil
-}
-
-func getContainerIP(container *dockertypes.ContainerJSON) string {
-	if container.NetworkSettings != nil {
-		for _, network := range container.NetworkSettings.Networks {
-			if network.IPAddress != "" {
-				return network.IPAddress
-			}
-		}
-	}
-	return ""
 }
